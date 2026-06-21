@@ -51,7 +51,7 @@ async function callAI(token: string, model: string, systemPrompt: string, userPr
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      max_tokens: 4000,
+      max_tokens: 16000,
       temperature: 0.7,
     }),
   });
@@ -214,55 +214,68 @@ async function runMultiAgentGeneration(
   const defaultSolveTime = params.difficulty === "easy" ? 20 : params.difficulty === "medium" ? 45 : 120;
   const logLines: string[] = [];
 
-  // ── Agent 1: generate (count + small buffer so Agent 2 has extras to rank) ──
-  const generateCount = params.count + Math.min(3, Math.ceil(params.count * 0.3));
-  logLines.push(`── Agent 1 (Generator): requesting ${generateCount} candidates ──`);
+  // Each AI call is limited to MAX_PER_BATCH questions to stay within output token limits.
+  // For large counts we loop, making sequential (rate-limit-safe) batches.
+  const MAX_PER_BATCH = 8;
+  const pool: AgentResult[] = [];
+  let batchNum = 0;
 
-  const candidates = await generateBatch(token, model, params, context, generateCount, difficultyGuide);
-  logLines.push(`Agent 1 produced ${candidates.length} candidate(s)`);
+  while (pool.length < params.count) {
+    batchNum++;
+    const needed = params.count - pool.length;
+    const batchSize = Math.min(MAX_PER_BATCH, needed);
 
-  if (candidates.length === 0) {
-    logLines.push(`Agent 1 returned no candidates.`);
-    return { results: [], agentLog: logLines.join('\n') };
+    logLines.push(`── Batch ${batchNum}: generating ${batchSize} question(s) (${pool.length}/${params.count} done) ──`);
+
+    // Agent 1: generate this batch
+    const candidates = await generateBatch(token, model, params, context, batchSize, difficultyGuide);
+    logLines.push(`  Agent 1 produced ${candidates.length} candidate(s)`);
+
+    if (candidates.length === 0) {
+      logLines.push(`  Agent 1 returned nothing — stopping early.`);
+      break;
+    }
+
+    await sleep(600); // respect rate limits between sequential calls
+
+    // Agent 2: rank this batch (never rejects — only adjusts score)
+    const reviews = await validateBatch(token, model, candidates, params, context, difficultyGuide);
+    logLines.push(`  Agent 2 scored ${reviews.length} candidate(s)`);
+
+    candidates.forEach((c, i) => {
+      const review = reviews.find(r => r.index === i) ?? reviews[i];
+      const baseScore = review?.qualityScore ?? 0.8;
+      const penalty = review && review.passed === false ? 0.1 : 0;
+      pool.push({
+        question: c.question,
+        correctAnswer: c.correctAnswer,
+        options: c.options ?? undefined,
+        explanation: c.explanation ?? `The correct answer is ${c.correctAnswer}.`,
+        learningObjective: c.learningObjective ?? `Understand ${context.topicName}`,
+        estimatedSolveTime: c.estimatedSolveTime ?? defaultSolveTime,
+        difficultyScore: review?.difficultyScore ?? defaultDiffScore,
+        qualityScore: Math.max(0.1, baseScore - penalty),
+        factuallyValid: review?.passed ?? true,
+        syllabusAligned: true,
+        grammarOk: true,
+        difficultyVerified: true,
+      });
+    });
+
+    logLines.push(`  Pool now has ${pool.length}/${params.count} questions`);
+
+    if (pool.length < params.count) {
+      await sleep(400); // small pause before next batch
+    }
   }
 
-  await sleep(600); // sequential — respect rate limit
-
-  // ── Agent 2: score for ranking ONLY — never rejects ──
-  logLines.push(`── Agent 2 (Quality Ranker): scoring ${candidates.length} candidate(s) ──`);
-  const reviews = await validateBatch(token, model, candidates, params, context, difficultyGuide);
-  logLines.push(`Agent 2 returned ${reviews.length} review(s)`);
-
-  // Merge generation + scores; Agent 2 scores adjust ranking but NEVER block a question
-  const pool: AgentResult[] = candidates.map((c, i) => {
-    const review = reviews.find(r => r.index === i) ?? reviews[i];
-    // If Agent 2 marked passed=false, penalise score slightly but still include
-    const baseScore = review?.qualityScore ?? 0.8;
-    const penalty = review && review.passed === false ? 0.15 : 0;
-    return {
-      question: c.question,
-      correctAnswer: c.correctAnswer,
-      options: c.options ?? undefined,
-      explanation: c.explanation ?? `The correct answer is ${c.correctAnswer}.`,
-      learningObjective: c.learningObjective ?? `Understand ${context.topicName}`,
-      estimatedSolveTime: c.estimatedSolveTime ?? defaultSolveTime,
-      difficultyScore: review?.difficultyScore ?? defaultDiffScore,
-      qualityScore: Math.max(0.1, baseScore - penalty),
-      factuallyValid: review?.passed ?? true,
-      syllabusAligned: true,
-      grammarOk: true,
-      difficultyVerified: true,
-    };
-  });
-
-  // Sort by score descending, return exactly params.count (or all if fewer generated)
   pool.sort((a, b) => b.qualityScore - a.qualityScore);
   const results = pool.slice(0, params.count);
 
-  logLines.push(`\nFinal: ${results.length}/${params.count} questions selected (sorted by quality score)`);
-  if (reviews.length > 0) {
-    const avgScore = (results.reduce((s, r) => s + r.qualityScore, 0) / results.length).toFixed(2);
-    logLines.push(`Average quality score of selected questions: ${avgScore}`);
+  logLines.push(`\nFinal: ${results.length}/${params.count} questions generated across ${batchNum} batch(es)`);
+  if (results.length > 0) {
+    const avg = (results.reduce((s, r) => s + r.qualityScore, 0) / results.length).toFixed(2);
+    logLines.push(`Average quality score: ${avg}`);
   }
 
   return { results, agentLog: logLines.join('\n') };
