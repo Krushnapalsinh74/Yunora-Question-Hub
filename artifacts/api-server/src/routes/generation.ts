@@ -73,6 +73,10 @@ function parseJSON<T>(text: string): T | null {
   }
 }
 
+async function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function runMultiAgentGeneration(
   token: string,
   model: string,
@@ -85,90 +89,109 @@ async function runMultiAgentGeneration(
     hard: "deep reasoning, multi-step thinking, concept integration, HOTS, analytical, score 8-10",
   };
 
-  const candidateCount = params.count * 5;
-
-  // Agent 1: Question Generator
+  // ── Agent 1: Generate questions WITH explanations in one call ────────────
   const agent1System = `You are an expert educational question generator for ${context.boardName} Board, ${context.standardName}, ${context.subjectName}.
-Generate ONLY valid JSON. No markdown outside JSON.`;
+Use LaTeX notation for all equations (wrap inline math in $...$ and display math in $$...$$).
+Return ONLY a valid JSON array. No markdown, no prose outside the JSON.`;
 
-  const agent1Prompt = `Generate ${candidateCount} ${params.difficulty} ${params.questionType} questions for:
+  const agent1Prompt = `Generate ${params.count} ${params.difficulty} ${params.questionType} questions on:
 Topic: ${context.topicName}
 Chapter: ${context.chapterName}
-Difficulty guide: ${difficultyGuide[params.difficulty]}
+Difficulty: ${difficultyGuide[params.difficulty]}
+
+Each question must include:
+- A clear, unambiguous question (use LaTeX for any equations)
+- The correct answer (use LaTeX for any equations/expressions)
+${params.questionType.toLowerCase().includes('mcq') || params.questionType.toLowerCase().includes('multiple') ? '- Options formatted as "A) ... \\nB) ... \\nC) ... \\nD) ..." (4 plausible options, only one correct)' : '- options: null'}
+- A step-by-step explanation with LaTeX for any math (clear enough for a student to understand)
+- A learning objective
 
 Return JSON array:
 [{
   "question": "...",
   "correctAnswer": "...",
-  "options": "A) ... B) ... C) ... D) ..." (only for MCQ, else null),
+  "options": "A) ...\\nB) ...\\nC) ...\\nD) ..." or null,
+  "explanation": "step-by-step explanation...",
+  "learningObjective": "student will be able to...",
   "estimatedSolveTime": 30
 }]`;
 
   const agent1Raw = await callAI(token, model, agent1System, agent1Prompt);
-  const candidates = parseJSON<Array<{ question: string; correctAnswer: string; options?: string; estimatedSolveTime?: number }>>(agent1Raw) ?? [];
+  const candidates = parseJSON<Array<{
+    question: string;
+    correctAnswer: string;
+    options?: string | null;
+    explanation?: string;
+    learningObjective?: string;
+    estimatedSolveTime?: number;
+  }>>(agent1Raw) ?? [];
 
   if (candidates.length === 0) return [];
 
-  // Agents 2-5 run in parallel for each candidate batch
-  const questionsJson = JSON.stringify(candidates.slice(0, Math.min(20, candidates.length)));
+  // Small delay between sequential calls to respect rate limits
+  await sleep(500);
 
-  const [agent2Raw, agent3Raw, agent4Raw, agent5Raw] = await Promise.all([
-    // Agent 2: Subject Expert
-    callAI(token, model,
-      `You are a subject expert validator for ${context.subjectName}, ${context.boardName} board, ${context.standardName}. Return only JSON.`,
-      `Validate these questions for factual accuracy and syllabus alignment. Return JSON array with same indices:
-${questionsJson}
-Return: [{"factuallyValid": true/false, "syllabusAligned": true/false, "reason": "..."}]`
-    ),
-    // Agent 3: Difficulty Auditor
-    callAI(token, model,
-      `You are a difficulty auditor for educational questions. Return only JSON.`,
-      `Verify these questions match ${params.difficulty} difficulty (${difficultyGuide[params.difficulty]}). Return JSON array:
-${questionsJson}
-Return: [{"difficultyVerified": true/false, "difficultyScore": 1-10, "reason": "..."}]`
-    ),
-    // Agent 4: Explanation Writer
-    callAI(token, model,
-      `You are an expert explanation writer for ${context.subjectName} education. Return only JSON.`,
-      `Write detailed explanations for each question. Return JSON array:
-${questionsJson}
-Return: [{"explanation": "detailed step-by-step explanation...", "learningObjective": "student will be able to..."}]`
-    ),
-    // Agent 5: Quality Reviewer
-    callAI(token, model,
-      `You are a quality reviewer for educational content. Return only JSON.`,
-      `Review these questions for grammar, clarity, ambiguity, and duplicates. Return JSON array:
-${questionsJson}
-Return: [{"grammarOk": true/false, "qualityScore": 0.0-1.0, "isDuplicate": false, "issues": "..."}]`
-    ),
-  ]);
-
-  const validations = parseJSON<Array<{ factuallyValid: boolean; syllabusAligned: boolean }>>(agent2Raw) ?? [];
-  const difficulties = parseJSON<Array<{ difficultyVerified: boolean; difficultyScore: number }>>(agent3Raw) ?? [];
-  const explanations = parseJSON<Array<{ explanation: string; learningObjective: string }>>(agent4Raw) ?? [];
-  const qualities = parseJSON<Array<{ grammarOk: boolean; qualityScore: number; isDuplicate: boolean }>>(agent5Raw) ?? [];
-
-  const results: AgentResult[] = candidates.slice(0, Math.min(20, candidates.length)).map((c, i) => ({
-    question: c.question,
-    correctAnswer: c.correctAnswer,
-    options: c.options,
-    explanation: explanations[i]?.explanation ?? `The correct answer is ${c.correctAnswer}. This tests ${params.questionType} understanding of ${context.topicName}.`,
-    difficultyScore: difficulties[i]?.difficultyScore ?? (params.difficulty === "easy" ? 2 : params.difficulty === "medium" ? 5 : 8),
-    qualityScore: qualities[i]?.qualityScore ?? 0.75,
-    estimatedSolveTime: c.estimatedSolveTime ?? (params.difficulty === "easy" ? 20 : params.difficulty === "medium" ? 45 : 120),
-    learningObjective: explanations[i]?.learningObjective ?? `Understand ${context.topicName}`,
-    factuallyValid: validations[i]?.factuallyValid ?? true,
-    syllabusAligned: validations[i]?.syllabusAligned ?? true,
-    grammarOk: qualities[i]?.grammarOk ?? true,
-    difficultyVerified: difficulties[i]?.difficultyVerified ?? true,
-  }));
-
-  // Filter and rank
-  const passing = results.filter(r =>
-    r.factuallyValid && r.syllabusAligned && r.grammarOk && r.difficultyVerified && r.qualityScore >= 0.5
+  // ── Agent 2: Validate + score all candidates in one call ─────────────────
+  const questionsJson = JSON.stringify(
+    candidates.slice(0, Math.min(params.count + 5, candidates.length)).map((c, i) => ({
+      index: i,
+      question: c.question,
+      correctAnswer: c.correctAnswer,
+    }))
   );
 
-  // Sort by quality score desc, take top N
+  const agent2System = `You are a combined subject-expert validator and quality reviewer for ${context.subjectName}, ${context.boardName} ${context.standardName}. Return ONLY valid JSON.`;
+  const agent2Prompt = `Review each question below for: factual accuracy, syllabus alignment with ${context.topicName}, grammar/clarity, and difficulty match (${params.difficulty}: ${difficultyGuide[params.difficulty]}).
+
+Questions:
+${questionsJson}
+
+Return a JSON array (one entry per question, same order):
+[{
+  "index": 0,
+  "factuallyValid": true,
+  "syllabusAligned": true,
+  "grammarOk": true,
+  "difficultyVerified": true,
+  "difficultyScore": 5,
+  "qualityScore": 0.85
+}]`;
+
+  const agent2Raw = await callAI(token, model, agent2System, agent2Prompt);
+  const reviews = parseJSON<Array<{
+    index: number;
+    factuallyValid: boolean;
+    syllabusAligned: boolean;
+    grammarOk: boolean;
+    difficultyVerified: boolean;
+    difficultyScore: number;
+    qualityScore: number;
+  }>>(agent2Raw) ?? [];
+
+  // Build results by merging generation + validation
+  const results: AgentResult[] = candidates.slice(0, Math.min(params.count + 5, candidates.length)).map((c, i) => {
+    const review = reviews.find(r => r.index === i) ?? reviews[i];
+    const defaultDiffScore = params.difficulty === "easy" ? 2 : params.difficulty === "medium" ? 5 : 8;
+    return {
+      question: c.question,
+      correctAnswer: c.correctAnswer,
+      options: c.options ?? undefined,
+      explanation: c.explanation ?? `The correct answer is ${c.correctAnswer}. This tests understanding of ${context.topicName}.`,
+      learningObjective: c.learningObjective ?? `Understand ${context.topicName}`,
+      estimatedSolveTime: c.estimatedSolveTime ?? (params.difficulty === "easy" ? 20 : params.difficulty === "medium" ? 45 : 120),
+      difficultyScore: review?.difficultyScore ?? defaultDiffScore,
+      qualityScore: review?.qualityScore ?? 0.75,
+      factuallyValid: review?.factuallyValid ?? true,
+      syllabusAligned: review?.syllabusAligned ?? true,
+      grammarOk: review?.grammarOk ?? true,
+      difficultyVerified: review?.difficultyVerified ?? true,
+    };
+  });
+
+  // Filter passing questions, sort by quality, return top N
+  const passing = results.filter(r =>
+    r.factuallyValid && r.syllabusAligned && r.grammarOk && r.qualityScore >= 0.5
+  );
   passing.sort((a, b) => b.qualityScore - a.qualityScore);
   return passing.slice(0, params.count);
 }
@@ -256,7 +279,7 @@ router.post("/generation/start", requireAuth, async (req, res) => {
         await db.update(generationJobsTable).set({
           status: "completed",
           totalGenerated: results.length,
-          agentLogs: `Agent 1 (Generator): Generated ${params.count * 5} candidates\nAgent 2 (Subject Expert): Validated factual accuracy\nAgent 3 (Difficulty Auditor): Verified difficulty scores\nAgent 4 (Explanation Writer): Generated explanations\nAgent 5 (Quality Reviewer): Quality scored and ranked\nFinal: ${results.length} high-quality questions selected`,
+          agentLogs: `Agent 1 (Generator): Generated ${params.count} questions with explanations and learning objectives\nAgent 2 (Validator): Checked factual accuracy, syllabus alignment, grammar, and difficulty\nFinal: ${results.length} high-quality questions selected`,
           completedAt: new Date(),
         }).where(eq(generationJobsTable.jobId, jobId));
 
