@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { topicsTable, chaptersTable, questionsTable } from "@workspace/db";
+import { topicsTable, chaptersTable, questionsTable, subjectsTable, standardsTable, boardsTable, aiProvidersTable } from "@workspace/db";
 import { eq, ilike, and, count } from "drizzle-orm";
-import { requireAuth } from "../lib/auth.js";
+import { requireAuth, simpleDecrypt } from "../lib/auth.js";
 
 const router = Router();
 
@@ -77,6 +77,126 @@ router.delete("/topics/:id", requireAuth, async (req, res) => {
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Delete topic error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// AI-generate topic suggestions for a chapter (preview only, does not save)
+router.post("/topics/ai-generate", requireAuth, async (req, res) => {
+  try {
+    const { chapterId, providerId, model, count = 10 } = req.body as {
+      chapterId: number;
+      providerId: number;
+      model: string;
+      count?: number;
+    };
+
+    if (!chapterId || !providerId || !model) {
+      res.status(400).json({ error: "chapterId, providerId, and model are required" });
+      return;
+    }
+
+    const [chapter] = await db.select().from(chaptersTable).where(eq(chaptersTable.id, chapterId)).limit(1);
+    if (!chapter) { res.status(404).json({ error: "Chapter not found" }); return; }
+
+    const [subject] = await db.select().from(subjectsTable).where(eq(subjectsTable.id, chapter.subjectId)).limit(1);
+    const [standard] = subject ? await db.select().from(standardsTable).where(eq(standardsTable.id, subject.standardId)).limit(1) : [undefined];
+    const [board] = standard ? await db.select().from(boardsTable).where(eq(boardsTable.id, standard.boardId)).limit(1) : [undefined];
+    const [provider] = await db.select().from(aiProvidersTable).where(eq(aiProvidersTable.id, providerId)).limit(1);
+
+    if (!provider) { res.status(404).json({ error: "AI provider not found" }); return; }
+
+    const token = simpleDecrypt(provider.encryptedToken);
+
+    // Fetch already-existing topics so AI avoids duplicates
+    const existing = await db.select({ name: topicsTable.name }).from(topicsTable).where(eq(topicsTable.chapterId, chapterId));
+    const existingNames = existing.map(t => t.name).join(", ") || "none";
+
+    const systemPrompt = `You are a curriculum expert for ${board?.name ?? "Indian"} board, ${standard?.name ?? ""}, ${subject?.name ?? ""}.
+Generate curriculum-aligned topic names with clear learning objectives. Return ONLY a valid JSON array. No markdown outside JSON.`;
+
+    const userPrompt = `Generate ${count} comprehensive topic suggestions for the chapter: "${chapter.name}" (Subject: ${subject?.name ?? ""}, Board: ${board?.name ?? ""}, ${standard?.name ?? ""}).
+
+Already existing topics (avoid duplicating these): ${existingNames}
+
+Requirements:
+- Each topic should represent one clearly bounded learning concept
+- Cover the full breadth of the chapter systematically
+- Topics should be ordered from foundational to advanced
+- Include both conceptual and application topics
+
+Return a JSON array of exactly ${count} objects:
+[
+  {
+    "name": "Topic name (concise, curriculum-standard phrasing)",
+    "description": "One sentence: what students will learn in this topic"
+  }
+]`;
+
+    const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        max_tokens: 3000,
+        temperature: 0.6,
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      res.status(502).json({ error: `AI API error: ${response.status} ${text.slice(0, 200)}` });
+      return;
+    }
+
+    const data = await response.json() as { choices: Array<{ message: { content: string } }> };
+    const raw = data.choices[0]?.message?.content ?? "[]";
+
+    // Parse JSON from response
+    let topics: Array<{ name: string; description: string }> = [];
+    try {
+      const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/) ?? raw.match(/(\[[\s\S]*\])/);
+      const jsonStr = match ? match[1] : raw;
+      topics = JSON.parse(jsonStr!.trim());
+    } catch {
+      res.status(502).json({ error: "AI returned invalid JSON. Try again." });
+      return;
+    }
+
+    res.json({ topics, chapterName: chapter.name, subjectName: subject?.name, boardName: board?.name });
+  } catch (err) {
+    req.log.error({ err }, "AI generate topics error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Bulk-save AI-generated topics
+router.post("/topics/bulk", requireAuth, async (req, res) => {
+  try {
+    const { topics, chapterId } = req.body as {
+      chapterId: number;
+      topics: Array<{ name: string; description: string }>;
+    };
+
+    if (!chapterId || !Array.isArray(topics) || topics.length === 0) {
+      res.status(400).json({ error: "chapterId and topics array are required" });
+      return;
+    }
+
+    const inserted = await db.insert(topicsTable).values(
+      topics.map(t => ({ name: t.name, description: t.description, chapterId, isActive: true }))
+    ).returning();
+
+    res.status(201).json({ saved: inserted.length, topics: inserted });
+  } catch (err) {
+    req.log.error({ err }, "Bulk save topics error");
     res.status(500).json({ error: "Internal server error" });
   }
 });
