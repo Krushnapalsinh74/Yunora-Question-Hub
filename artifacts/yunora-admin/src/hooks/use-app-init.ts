@@ -12,6 +12,17 @@ export function useAppInit() {
       const state = useAuthStore.getState();
       return state.token;
     });
+
+    // Clear any persisted dark theme so light is the default
+    try {
+      const stored = localStorage.getItem('yunora_theme');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.state?.theme === 'dark') {
+          useThemeStore.getState().setTheme('light');
+        }
+      }
+    } catch {}
   }, []);
 
   useEffect(() => {

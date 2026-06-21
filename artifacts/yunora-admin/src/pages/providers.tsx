@@ -5,10 +5,9 @@ import {
   useDeleteAiProvider,
   useTestAiProvider,
   getListAiProvidersQueryKey,
-  AiProviderInputProviderType
 } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -19,15 +18,66 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { Cpu, Plus, Trash2, ShieldCheck, ShieldAlert, KeyRound, Loader2 } from 'lucide-react';
+import { Cpu, Plus, Trash2, ShieldCheck, KeyRound, Loader2 } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+
+const PROVIDER_MODELS: Record<string, string[]> = {
+  openai: [
+    'gpt-4o',
+    'gpt-4o-mini',
+    'gpt-4-turbo',
+    'gpt-4',
+    'gpt-3.5-turbo',
+    'o1',
+    'o1-mini',
+    'o3-mini',
+  ],
+  anthropic: [
+    'claude-opus-4-5',
+    'claude-sonnet-4-5',
+    'claude-3-5-haiku-latest',
+    'claude-3-opus-latest',
+    'claude-3-sonnet-20240229',
+    'claude-3-haiku-20240307',
+  ],
+  gemini: [
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-pro',
+    'gemini-1.5-flash',
+    'gemini-pro',
+  ],
+  groq: [
+    'llama-3.3-70b-versatile',
+    'llama-3.1-70b-versatile',
+    'llama-3.1-8b-instant',
+    'mixtral-8x7b-32768',
+    'gemma2-9b-it',
+  ],
+  azure_openai: [
+    'gpt-4o',
+    'gpt-4o-mini',
+    'gpt-4-turbo',
+    'gpt-4',
+    'gpt-35-turbo',
+  ],
+  github_models: [
+    'gpt-4o',
+    'gpt-4o-mini',
+    'Meta-Llama-3.1-70B-Instruct',
+    'Mistral-Large-2411',
+    'Phi-4',
+  ],
+};
 
 const providerSchema = z.object({
   name: z.string().min(1, "Name is required"),
   providerType: z.enum(['openai', 'anthropic', 'azure_openai', 'gemini', 'groq', 'github_models']),
   accessToken: z.string().min(1, "Access token is required"),
   defaultModel: z.string().min(1, "Default model is required"),
-  availableModels: z.string().transform(str => str.split(',').map(s => s.trim()).filter(Boolean)),
+  availableModels: z.array(z.string()).min(1, "Select at least one model"),
   isActive: z.boolean().default(true)
 });
 
@@ -125,11 +175,15 @@ export default function ProvidersPage() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Default Model</span>
-                  <span className="font-mono">{provider.defaultModel}</span>
+                  <span className="font-mono text-xs">{provider.defaultModel}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Available Models</span>
-                  <span className="font-mono">{provider.availableModels?.length || 0}</span>
+                <div>
+                  <span className="text-muted-foreground block mb-1">Available Models</span>
+                  <div className="flex flex-wrap gap-1">
+                    {provider.availableModels?.map((m) => (
+                      <Badge key={m} variant="secondary" className="text-xs font-mono">{m}</Badge>
+                    ))}
+                  </div>
                 </div>
                 <div className="flex justify-between items-center pt-2">
                   <span className="text-muted-foreground flex items-center gap-1"><KeyRound className="h-3 w-3" /> API Key</span>
@@ -178,13 +232,32 @@ function ProviderForm({ onSuccess }: { onSuccess: () => void }) {
       providerType: 'openai',
       accessToken: '',
       defaultModel: '',
-      availableModels: [] as any, // handled by transform
-      isActive: true
+      availableModels: [],
+      isActive: true,
     }
   });
 
+  const providerType = form.watch('providerType');
+  const availableModels = form.watch('availableModels');
+  const modelOptions = PROVIDER_MODELS[providerType] ?? [];
+
+  const toggleModel = (model: string) => {
+    const current = form.getValues('availableModels');
+    const next = current.includes(model)
+      ? current.filter((m) => m !== model)
+      : [...current, model];
+    form.setValue('availableModels', next, { shouldValidate: true });
+    // Clear default model if it was removed
+    if (!next.includes(form.getValues('defaultModel'))) {
+      form.setValue('defaultModel', '', { shouldValidate: true });
+    }
+  };
+
+  const selectAll = () => {
+    form.setValue('availableModels', [...modelOptions], { shouldValidate: true });
+  };
+
   const onSubmit = (data: ProviderFormValues) => {
-    // Type assertion to match generated schema which expects string[] for availableModels but form returns any after transform
     createProvider.mutate({ data: data as any }, {
       onSuccess: () => {
         toast({ title: "Provider created" });
@@ -199,7 +272,7 @@ function ProviderForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
         <FormField
           control={form.control}
           name="name"
@@ -217,8 +290,15 @@ function ProviderForm({ onSuccess }: { onSuccess: () => void }) {
           name="providerType"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Type</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
+              <FormLabel>Provider Type</FormLabel>
+              <Select
+                onValueChange={(val) => {
+                  field.onChange(val);
+                  form.setValue('availableModels', []);
+                  form.setValue('defaultModel', '');
+                }}
+                value={field.value}
+              >
                 <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                 <SelectContent>
                   <SelectItem value="openai">OpenAI</SelectItem>
@@ -248,11 +328,33 @@ function ProviderForm({ onSuccess }: { onSuccess: () => void }) {
 
         <FormField
           control={form.control}
-          name="defaultModel"
-          render={({ field }) => (
+          name="availableModels"
+          render={() => (
             <FormItem>
-              <FormLabel>Default Model</FormLabel>
-              <FormControl><Input placeholder="e.g. gpt-4o" {...field} /></FormControl>
+              <div className="flex items-center justify-between mb-2">
+                <FormLabel>Available Models</FormLabel>
+                <button
+                  type="button"
+                  className="text-xs text-primary hover:underline"
+                  onClick={selectAll}
+                >
+                  Select all
+                </button>
+              </div>
+              <div className="rounded-md border p-3 space-y-2 max-h-52 overflow-y-auto">
+                {modelOptions.map((model) => (
+                  <div key={model} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`model-${model}`}
+                      checked={availableModels.includes(model)}
+                      onCheckedChange={() => toggleModel(model)}
+                    />
+                    <Label htmlFor={`model-${model}`} className="font-mono text-sm cursor-pointer">
+                      {model}
+                    </Label>
+                  </div>
+                ))}
+              </div>
               <FormMessage />
             </FormItem>
           )}
@@ -260,11 +362,26 @@ function ProviderForm({ onSuccess }: { onSuccess: () => void }) {
 
         <FormField
           control={form.control}
-          name="availableModels"
+          name="defaultModel"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Available Models (comma separated)</FormLabel>
-              <FormControl><Input placeholder="gpt-4o, gpt-4o-mini" {...field} value={field.value as any} /></FormControl>
+              <FormLabel>Default Model</FormLabel>
+              <Select
+                disabled={availableModels.length === 0}
+                onValueChange={field.onChange}
+                value={field.value}
+              >
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder={availableModels.length === 0 ? "Select models above first" : "Pick default"} />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {availableModels.map((m) => (
+                    <SelectItem key={m} value={m} className="font-mono text-sm">{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <FormMessage />
             </FormItem>
           )}
@@ -274,7 +391,7 @@ function ProviderForm({ onSuccess }: { onSuccess: () => void }) {
           control={form.control}
           name="isActive"
           render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm mt-4">
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
               <div className="space-y-0.5">
                 <FormLabel>Active Status</FormLabel>
                 <div className="text-sm text-muted-foreground">Enable this provider for use.</div>
@@ -286,7 +403,7 @@ function ProviderForm({ onSuccess }: { onSuccess: () => void }) {
           )}
         />
 
-        <Button type="submit" className="w-full mt-6" disabled={createProvider.isPending}>
+        <Button type="submit" className="w-full" disabled={createProvider.isPending}>
           {createProvider.isPending ? "Saving..." : "Save Provider"}
         </Button>
       </form>
