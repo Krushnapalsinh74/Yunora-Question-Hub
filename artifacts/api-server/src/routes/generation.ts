@@ -220,6 +220,9 @@ async function runMultiAgentGeneration(
   const pool: AgentResult[] = [];
   let batchNum = 0;
 
+  let consecutiveFailures = 0;
+  const MAX_CONSECUTIVE_FAILURES = 3;
+
   while (pool.length < params.count) {
     batchNum++;
     const needed = params.count - pool.length;
@@ -227,20 +230,37 @@ async function runMultiAgentGeneration(
 
     logLines.push(`── Batch ${batchNum}: generating ${batchSize} question(s) (${pool.length}/${params.count} done) ──`);
 
-    // Agent 1: generate this batch
-    const candidates = await generateBatch(token, model, params, context, batchSize, difficultyGuide);
-    logLines.push(`  Agent 1 produced ${candidates.length} candidate(s)`);
-
-    if (candidates.length === 0) {
-      logLines.push(`  Agent 1 returned nothing — stopping early.`);
-      break;
+    // Agent 1: generate this batch — retry up to 2 times if parse fails
+    let candidates: RawCandidate[] = [];
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      candidates = await generateBatch(token, model, params, context, batchSize, difficultyGuide);
+      if (candidates.length > 0) break;
+      logLines.push(`  Agent 1 attempt ${attempt} returned 0 — ${attempt < 2 ? 'retrying...' : 'skipping batch.'}`);
+      if (attempt < 2) await sleep(800);
     }
 
+    if (candidates.length === 0) {
+      consecutiveFailures++;
+      logLines.push(`  Consecutive failures: ${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}`);
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        logLines.push(`  Too many consecutive failures — stopping.`);
+        break;
+      }
+      await sleep(1000);
+      continue; // try next batch rather than break
+    }
+
+    consecutiveFailures = 0; // reset on success
     await sleep(600); // respect rate limits between sequential calls
 
     // Agent 2: rank this batch (never rejects — only adjusts score)
-    const reviews = await validateBatch(token, model, candidates, params, context, difficultyGuide);
-    logLines.push(`  Agent 2 scored ${reviews.length} candidate(s)`);
+    let reviews: Review[] = [];
+    try {
+      reviews = await validateBatch(token, model, candidates, params, context, difficultyGuide);
+    } catch {
+      logLines.push(`  Agent 2 failed — using default scores for this batch.`);
+    }
+    logLines.push(`  Agent 1: ${candidates.length} generated, Agent 2: ${reviews.length} scored`);
 
     candidates.forEach((c, i) => {
       const review = reviews.find(r => r.index === i) ?? reviews[i];
