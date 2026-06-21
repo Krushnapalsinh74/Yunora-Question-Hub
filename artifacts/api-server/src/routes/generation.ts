@@ -63,11 +63,32 @@ async function callAI(token: string, model: string, systemPrompt: string, userPr
   return data.choices[0]?.message?.content ?? "";
 }
 
+function fixLatexEscapes(raw: string): string {
+  // AI often writes LaTeX like \vec, \frac inside JSON strings without doubling the backslash.
+  // Strategy: protect already-doubled backslashes, then double all remaining single backslashes.
+  const PLACEHOLDER = '\x00DS\x00';
+  return raw
+    .replace(/\\\\/g, PLACEHOLDER)   // protect \\  →  placeholder
+    .replace(/\\/g, '\\\\')           // single \  →  \\
+    .replace(new RegExp(PLACEHOLDER.replace(/\x00/g, '\\x00'), 'g'), '\\\\'); // restore \\
+}
+
 function parseJSON<T>(text: string): T | null {
+  const extract = (s: string) => {
+    const m = s.match(/```(?:json)?\s*([\s\S]*?)```/) ?? s.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
+    return m ? m[1].trim() : s.trim();
+  };
+
+  const raw = extract(text);
+
+  // First attempt: direct parse (works when AI correctly double-escapes)
   try {
-    const match = text.match(/```(?:json)?\s*([\s\S]*?)```/) ?? text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-    const raw = match ? match[1] : text;
-    return JSON.parse(raw!.trim()) as T;
+    return JSON.parse(raw) as T;
+  } catch { /* fall through */ }
+
+  // Second attempt: fix unescaped backslashes from LaTeX and retry
+  try {
+    return JSON.parse(fixLatexEscapes(raw)) as T;
   } catch {
     return null;
   }
@@ -105,8 +126,18 @@ async function generateBatch(
 ): Promise<RawCandidate[]> {
   const isMcq = /mcq|multiple.?choice/i.test(params.questionType);
   const system = `You are an expert educational question generator for ${context.boardName} Board, ${context.standardName}, ${context.subjectName}.
-Use LaTeX for ALL math expressions: wrap inline math in $...$ and display/block equations in $$...$$. 
-Return ONLY a valid JSON array — no markdown fences, no prose outside JSON.`;
+
+CRITICAL JSON RULE: You are returning JSON. Inside JSON strings, ALL backslashes must be doubled.
+- Write \\\\vec not \\vec
+- Write \\\\frac not \\frac  
+- Write \\\\hat not \\hat
+- Write \\\\sqrt not \\sqrt
+- Write \\\\times not \\times
+- Write \\\\theta not \\theta
+Example: "What is $\\\\vec{A} \\\\times \\\\vec{B}$?" — every LaTeX \\ becomes \\\\ in JSON.
+
+Use LaTeX for ALL math: inline math in $...$, display math in $$...$$.
+Return ONLY a valid JSON array — no markdown fences, no extra text outside the JSON.`;
 
   const feedbackSection = previousFeedback
     ? `\n\nIMPORTANT — previous batch was rejected for these reasons. Fix ALL of them:\n${previousFeedback}\n`
