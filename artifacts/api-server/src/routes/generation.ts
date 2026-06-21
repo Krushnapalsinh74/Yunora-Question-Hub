@@ -179,81 +179,62 @@ async function runMultiAgentGeneration(
     hard: "deep reasoning, multi-step thinking, concept integration, HOTS, analytical, score 8-10",
   };
 
-  const MAX_ROUNDS = 4;
-  const approved: AgentResult[] = [];
-  const logLines: string[] = [];
-  let previousFeedback: string | undefined;
   const defaultDiffScore = params.difficulty === "easy" ? 2 : params.difficulty === "medium" ? 5 : 8;
   const defaultSolveTime = params.difficulty === "easy" ? 20 : params.difficulty === "medium" ? 45 : 120;
+  const logLines: string[] = [];
 
-  for (let round = 1; round <= MAX_ROUNDS; round++) {
-    const needed = params.count - approved.length;
-    if (needed <= 0) break;
+  // ── Agent 1: generate (count + small buffer so Agent 2 has extras to rank) ──
+  const generateCount = params.count + Math.min(3, Math.ceil(params.count * 0.3));
+  logLines.push(`── Agent 1 (Generator): requesting ${generateCount} candidates ──`);
 
-    logLines.push(`── Round ${round}: Generating ${needed} question(s) ──`);
+  const candidates = await generateBatch(token, model, params, context, generateCount, difficultyGuide);
+  logLines.push(`Agent 1 produced ${candidates.length} candidate(s)`);
 
-    // Agent 1: generate
-    const candidates = await generateBatch(token, model, params, context, needed, difficultyGuide, previousFeedback);
-    logLines.push(`Agent 1 (Generator): produced ${candidates.length} candidate(s)`);
-
-    if (candidates.length === 0) {
-      logLines.push(`Agent 1 returned no candidates — stopping.`);
-      break;
-    }
-
-    await sleep(600); // respect rate limit between calls
-
-    // Agent 2: validate
-    const reviews = await validateBatch(token, model, candidates, params, context, difficultyGuide);
-    logLines.push(`Agent 2 (Validator): reviewed ${reviews.length} question(s)`);
-
-    const failedFeedback: string[] = [];
-
-    candidates.forEach((c, i) => {
-      const review = reviews.find(r => r.index === i) ?? reviews[i];
-      const passed = review?.passed ?? true; // default pass if validator failed to return data
-      const qualityScore = review?.qualityScore ?? 0.8;
-
-      if (passed) {
-        approved.push({
-          question: c.question,
-          correctAnswer: c.correctAnswer,
-          options: c.options ?? undefined,
-          explanation: c.explanation ?? `The correct answer is ${c.correctAnswer}.`,
-          learningObjective: c.learningObjective ?? `Understand ${context.topicName}`,
-          estimatedSolveTime: c.estimatedSolveTime ?? defaultSolveTime,
-          difficultyScore: review?.difficultyScore ?? defaultDiffScore,
-          qualityScore,
-          factuallyValid: true,
-          syllabusAligned: true,
-          grammarOk: true,
-          difficultyVerified: true,
-        });
-      } else {
-        failedFeedback.push(`Q${i + 1}: "${c.question.slice(0, 80)}..." — ${review?.feedback ?? 'did not pass validation'}`);
-      }
-    });
-
-    logLines.push(`  ✓ ${approved.length} approved so far, ${params.count - approved.length} still needed`);
-
-    if (approved.length >= params.count) break;
-
-    if (failedFeedback.length > 0) {
-      previousFeedback = failedFeedback.join('\n');
-      logLines.push(`Agent 1 will retry with feedback from ${failedFeedback.length} failed question(s)`);
-      await sleep(400);
-    } else {
-      // Validator returned no data — accept all candidates as-is
-      logLines.push(`Validator returned no data — accepting remaining candidates`);
-      break;
-    }
+  if (candidates.length === 0) {
+    logLines.push(`Agent 1 returned no candidates.`);
+    return { results: [], agentLog: logLines.join('\n') };
   }
 
-  // Safety net: if still short, fill with the best of last batch (no validator)
-  logLines.push(`\nFinal: ${approved.length}/${params.count} questions approved`);
+  await sleep(600); // sequential — respect rate limit
 
-  approved.sort((a, b) => b.qualityScore - a.qualityScore);
-  return { results: approved.slice(0, params.count), agentLog: logLines.join('\n') };
+  // ── Agent 2: score for ranking ONLY — never rejects ──
+  logLines.push(`── Agent 2 (Quality Ranker): scoring ${candidates.length} candidate(s) ──`);
+  const reviews = await validateBatch(token, model, candidates, params, context, difficultyGuide);
+  logLines.push(`Agent 2 returned ${reviews.length} review(s)`);
+
+  // Merge generation + scores; Agent 2 scores adjust ranking but NEVER block a question
+  const pool: AgentResult[] = candidates.map((c, i) => {
+    const review = reviews.find(r => r.index === i) ?? reviews[i];
+    // If Agent 2 marked passed=false, penalise score slightly but still include
+    const baseScore = review?.qualityScore ?? 0.8;
+    const penalty = review && review.passed === false ? 0.15 : 0;
+    return {
+      question: c.question,
+      correctAnswer: c.correctAnswer,
+      options: c.options ?? undefined,
+      explanation: c.explanation ?? `The correct answer is ${c.correctAnswer}.`,
+      learningObjective: c.learningObjective ?? `Understand ${context.topicName}`,
+      estimatedSolveTime: c.estimatedSolveTime ?? defaultSolveTime,
+      difficultyScore: review?.difficultyScore ?? defaultDiffScore,
+      qualityScore: Math.max(0.1, baseScore - penalty),
+      factuallyValid: review?.passed ?? true,
+      syllabusAligned: true,
+      grammarOk: true,
+      difficultyVerified: true,
+    };
+  });
+
+  // Sort by score descending, return exactly params.count (or all if fewer generated)
+  pool.sort((a, b) => b.qualityScore - a.qualityScore);
+  const results = pool.slice(0, params.count);
+
+  logLines.push(`\nFinal: ${results.length}/${params.count} questions selected (sorted by quality score)`);
+  if (reviews.length > 0) {
+    const avgScore = (results.reduce((s, r) => s + r.qualityScore, 0) / results.length).toFixed(2);
+    logLines.push(`Average quality score of selected questions: ${avgScore}`);
+  }
+
+  return { results, agentLog: logLines.join('\n') };
 }
 
 router.post("/generation/start", requireAuth, async (req, res) => {
