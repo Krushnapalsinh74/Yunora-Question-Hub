@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { format, parseISO } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Textarea } from '@/components/ui/textarea';
 
 interface AiTopic {
   name: string;
@@ -113,8 +114,14 @@ export default function HierarchyPage() {
 function BoardsTab({ onSelectBoard }: { onSelectBoard: (id: number) => void }) {
   const { data, isLoading } = useListBoards();
   const deleteBoard = useDeleteBoard();
+  const createBoard = useCreateBoard();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [description, setDescription] = useState('');
 
   const handleDelete = (id: number) => {
     deleteBoard.mutate({ id }, {
@@ -128,212 +135,509 @@ function BoardsTab({ onSelectBoard }: { onSelectBoard: (id: number) => void }) {
     });
   };
 
+  const handleCreate = () => {
+    if (!name.trim() || !code.trim()) {
+      toast({ variant: 'destructive', title: 'Name and code are required' });
+      return;
+    }
+    createBoard.mutate(
+      { data: { name: name.trim(), code: code.trim().toUpperCase(), description: description.trim() || undefined } },
+      {
+        onSuccess: () => {
+          toast({ title: 'Board created!' });
+          queryClient.invalidateQueries({ queryKey: getListBoardsQueryKey() });
+          setDialogOpen(false);
+          setName(''); setCode(''); setDescription('');
+        },
+        onError: (err) => {
+          toast({ variant: 'destructive', title: 'Failed to create board', description: err.message });
+        }
+      }
+    );
+  };
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle>Boards</CardTitle>
-          <CardDescription>Top-level educational bodies. Click a board to drill into its standards.</CardDescription>
-        </div>
-        <Button size="sm"><Plus className="mr-2 h-4 w-4" /> Add Board</Button>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? <Skeleton className="h-64 w-full" /> : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data?.data.map((board) => (
-                <TableRow key={board.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectBoard(board.id)}>
-                  <TableCell className="font-mono text-xs">{board.code}</TableCell>
-                  <TableCell className="font-medium flex items-center gap-2">{board.name} <ChevronRight className="h-4 w-4 text-muted-foreground" /></TableCell>
-                  <TableCell><Badge variant={board.isActive ? 'default' : 'secondary'}>{board.isActive ? 'Active' : 'Inactive'}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground">{board.createdAt ? format(parseISO(board.createdAt), 'MMM d, yyyy') : '-'}</TableCell>
-                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                    <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                          <AlertDialogDescription>This will permanently delete the board and all nested data.</AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleDelete(board.id)} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {(!data?.data || data.data.length === 0) && (
+    <>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Boards</CardTitle>
+            <CardDescription>Top-level educational bodies. Click a board to drill into its standards.</CardDescription>
+          </div>
+          <Button size="sm" onClick={() => setDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Add Board
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <Skeleton className="h-64 w-full" /> : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No boards found.</TableCell>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+              </TableHeader>
+              <TableBody>
+                {data?.data.map((board) => (
+                  <TableRow key={board.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectBoard(board.id)}>
+                    <TableCell className="font-mono text-xs">{board.code}</TableCell>
+                    <TableCell className="font-medium flex items-center gap-2">{board.name} <ChevronRight className="h-4 w-4 text-muted-foreground" /></TableCell>
+                    <TableCell><Badge variant={board.isActive ? 'default' : 'secondary'}>{board.isActive ? 'Active' : 'Inactive'}</Badge></TableCell>
+                    <TableCell className="text-muted-foreground">{board.createdAt ? format(parseISO(board.createdAt), 'MMM d, yyyy') : '-'}</TableCell>
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                            <AlertDialogDescription>This will permanently delete the board and all nested data.</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDelete(board.id)} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {(!data?.data || data.data.length === 0) && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No boards found. Add one to get started.</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Board</DialogTitle>
+            <DialogDescription>Create a new top-level educational board (e.g. CBSE, ICSE).</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="board-name">Name <span className="text-destructive">*</span></Label>
+              <Input id="board-name" placeholder="e.g. Central Board of Secondary Education" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="board-code">Code <span className="text-destructive">*</span></Label>
+              <Input id="board-code" placeholder="e.g. CBSE" value={code} onChange={e => setCode(e.target.value)} />
+              <p className="text-xs text-muted-foreground">A short unique identifier. Will be uppercased automatically.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="board-desc">Description</Label>
+              <Textarea id="board-desc" placeholder="Optional description" value={description} onChange={e => setDescription(e.target.value)} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} disabled={createBoard.isPending}>
+              {createBoard.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating…</> : 'Create Board'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
 function StandardsTab({ boardId, onSelectStandard }: { boardId?: number, onSelectStandard: (id: number) => void }) {
   const { data, isLoading } = useListStandards({ boardId });
+  const { data: boardsData } = useListBoards();
+  const createStandard = useCreateStandard();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [level, setLevel] = useState('');
+  const [selectedBoard, setSelectedBoard] = useState<string>(boardId ? String(boardId) : '');
+
+  const handleCreate = () => {
+    if (!name.trim() || !level.trim() || !selectedBoard) {
+      toast({ variant: 'destructive', title: 'Name, level, and board are required' });
+      return;
+    }
+    createStandard.mutate(
+      { data: { name: name.trim(), level: parseInt(level), boardId: parseInt(selectedBoard) } },
+      {
+        onSuccess: () => {
+          toast({ title: 'Standard created!' });
+          queryClient.invalidateQueries({ queryKey: getListStandardsQueryKey() });
+          setDialogOpen(false);
+          setName(''); setLevel('');
+        },
+        onError: (err) => {
+          toast({ variant: 'destructive', title: 'Failed to create standard', description: err.message });
+        }
+      }
+    );
+  };
+
+  const openDialog = () => {
+    setSelectedBoard(boardId ? String(boardId) : '');
+    setDialogOpen(true);
+  };
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle>Standards</CardTitle>
-          <CardDescription>Grade levels. Click to see its subjects.</CardDescription>
-        </div>
-        <Button size="sm"><Plus className="mr-2 h-4 w-4" /> Add Standard</Button>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? <Skeleton className="h-64 w-full" /> : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Level</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Board</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data?.data.map((item) => (
-                <TableRow key={item.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectStandard(item.id)}>
-                  <TableCell>{item.level}</TableCell>
-                  <TableCell className="font-medium flex items-center gap-2">{item.name} <ChevronRight className="h-4 w-4 text-muted-foreground" /></TableCell>
-                  <TableCell className="text-muted-foreground">{item.boardName}</TableCell>
-                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                    <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {(!data?.data || data.data.length === 0) && (
+    <>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Standards</CardTitle>
+            <CardDescription>Grade levels. Click to see its subjects.</CardDescription>
+          </div>
+          <Button size="sm" onClick={openDialog}>
+            <Plus className="mr-2 h-4 w-4" /> Add Standard
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <Skeleton className="h-64 w-full" /> : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">{boardId ? 'No standards found for this board.' : 'Select a board first.'}</TableCell>
+                  <TableHead>Level</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Board</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+              </TableHeader>
+              <TableBody>
+                {data?.data.map((item) => (
+                  <TableRow key={item.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectStandard(item.id)}>
+                    <TableCell>{item.level}</TableCell>
+                    <TableCell className="font-medium flex items-center gap-2">{item.name} <ChevronRight className="h-4 w-4 text-muted-foreground" /></TableCell>
+                    <TableCell className="text-muted-foreground">{item.boardName}</TableCell>
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {(!data?.data || data.data.length === 0) && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">{boardId ? 'No standards found for this board.' : 'Select a board first, or add a standard for any board.'}</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Standard</DialogTitle>
+            <DialogDescription>Create a new grade level / standard under a board.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Board <span className="text-destructive">*</span></Label>
+              <Select value={selectedBoard} onValueChange={setSelectedBoard}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select board" />
+                </SelectTrigger>
+                <SelectContent>
+                  {boardsData?.data.map(b => (
+                    <SelectItem key={b.id} value={String(b.id)}>{b.name} ({b.code})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="std-name">Name <span className="text-destructive">*</span></Label>
+              <Input id="std-name" placeholder="e.g. Grade 10" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="std-level">Level (number) <span className="text-destructive">*</span></Label>
+              <Input id="std-level" type="number" placeholder="e.g. 10" value={level} onChange={e => setLevel(e.target.value)} />
+              <p className="text-xs text-muted-foreground">Numeric ordering of the grade (e.g. 1 for Grade 1, 12 for Grade 12).</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} disabled={createStandard.isPending}>
+              {createStandard.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating…</> : 'Create Standard'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
 function SubjectsTab({ standardId, onSelectSubject }: { standardId?: number, onSelectSubject: (id: number) => void }) {
   const { data, isLoading } = useListSubjects({ standardId });
+  const { data: standardsData } = useListStandards({});
+  const createSubject = useCreateSubject();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [selectedStandard, setSelectedStandard] = useState<string>(standardId ? String(standardId) : '');
+
+  const handleCreate = () => {
+    if (!name.trim() || !code.trim() || !selectedStandard) {
+      toast({ variant: 'destructive', title: 'Name, code, and standard are required' });
+      return;
+    }
+    createSubject.mutate(
+      { data: { name: name.trim(), code: code.trim().toUpperCase(), standardId: parseInt(selectedStandard) } },
+      {
+        onSuccess: () => {
+          toast({ title: 'Subject created!' });
+          queryClient.invalidateQueries({ queryKey: getListSubjectsQueryKey() });
+          setDialogOpen(false);
+          setName(''); setCode('');
+        },
+        onError: (err) => {
+          toast({ variant: 'destructive', title: 'Failed to create subject', description: err.message });
+        }
+      }
+    );
+  };
+
+  const openDialog = () => {
+    setSelectedStandard(standardId ? String(standardId) : '');
+    setDialogOpen(true);
+  };
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle>Subjects</CardTitle>
-          <CardDescription>Academic subjects. Click to see its chapters.</CardDescription>
-        </div>
-        <Button size="sm"><Plus className="mr-2 h-4 w-4" /> Add Subject</Button>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? <Skeleton className="h-64 w-full" /> : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Standard</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data?.data.map((item) => (
-                <TableRow key={item.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectSubject(item.id)}>
-                  <TableCell className="font-mono text-xs">{item.code}</TableCell>
-                  <TableCell className="font-medium flex items-center gap-2">{item.name} <ChevronRight className="h-4 w-4 text-muted-foreground" /></TableCell>
-                  <TableCell className="text-muted-foreground">{item.standardName}</TableCell>
-                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                    <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {(!data?.data || data.data.length === 0) && (
+    <>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Subjects</CardTitle>
+            <CardDescription>Academic subjects. Click to see its chapters.</CardDescription>
+          </div>
+          <Button size="sm" onClick={openDialog}>
+            <Plus className="mr-2 h-4 w-4" /> Add Subject
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <Skeleton className="h-64 w-full" /> : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">{standardId ? 'No subjects found.' : 'Select a standard first.'}</TableCell>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Standard</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+              </TableHeader>
+              <TableBody>
+                {data?.data.map((item) => (
+                  <TableRow key={item.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectSubject(item.id)}>
+                    <TableCell className="font-mono text-xs">{item.code}</TableCell>
+                    <TableCell className="font-medium flex items-center gap-2">{item.name} <ChevronRight className="h-4 w-4 text-muted-foreground" /></TableCell>
+                    <TableCell className="text-muted-foreground">{item.standardName}</TableCell>
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {(!data?.data || data.data.length === 0) && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">{standardId ? 'No subjects found.' : 'Select a standard first, or add a subject for any standard.'}</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Subject</DialogTitle>
+            <DialogDescription>Create a new academic subject under a standard.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Standard <span className="text-destructive">*</span></Label>
+              <Select value={selectedStandard} onValueChange={setSelectedStandard}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select standard" />
+                </SelectTrigger>
+                <SelectContent>
+                  {standardsData?.data.map(s => (
+                    <SelectItem key={s.id} value={String(s.id)}>{s.name} — {s.boardName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="subj-name">Name <span className="text-destructive">*</span></Label>
+              <Input id="subj-name" placeholder="e.g. Mathematics" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="subj-code">Code <span className="text-destructive">*</span></Label>
+              <Input id="subj-code" placeholder="e.g. MATH" value={code} onChange={e => setCode(e.target.value)} />
+              <p className="text-xs text-muted-foreground">A short unique code. Will be uppercased automatically.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} disabled={createSubject.isPending}>
+              {createSubject.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating…</> : 'Create Subject'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
 function ChaptersTab({ subjectId, onSelectChapter }: { subjectId?: number, onSelectChapter: (id: number) => void }) {
   const { data, isLoading } = useListChapters({ subjectId });
+  const { data: subjectsData } = useListSubjects({});
+  const createChapter = useCreateChapter();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [orderIndex, setOrderIndex] = useState('1');
+  const [selectedSubject, setSelectedSubject] = useState<string>(subjectId ? String(subjectId) : '');
+
+  const handleCreate = () => {
+    if (!name.trim() || !selectedSubject) {
+      toast({ variant: 'destructive', title: 'Name and subject are required' });
+      return;
+    }
+    createChapter.mutate(
+      { data: { name: name.trim(), orderIndex: parseInt(orderIndex) || 1, subjectId: parseInt(selectedSubject) } },
+      {
+        onSuccess: () => {
+          toast({ title: 'Chapter created!' });
+          queryClient.invalidateQueries({ queryKey: getListChaptersQueryKey() });
+          setDialogOpen(false);
+          setName(''); setOrderIndex('1');
+        },
+        onError: (err) => {
+          toast({ variant: 'destructive', title: 'Failed to create chapter', description: err.message });
+        }
+      }
+    );
+  };
+
+  const openDialog = () => {
+    setSelectedSubject(subjectId ? String(subjectId) : '');
+    setDialogOpen(true);
+  };
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle>Chapters</CardTitle>
-          <CardDescription>Subject chapters. Click to see its topics.</CardDescription>
-        </div>
-        <Button size="sm"><Plus className="mr-2 h-4 w-4" /> Add Chapter</Button>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? <Skeleton className="h-64 w-full" /> : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Order</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data?.data.map((item) => (
-                <TableRow key={item.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectChapter(item.id)}>
-                  <TableCell>{item.orderIndex}</TableCell>
-                  <TableCell className="font-medium flex items-center gap-2">{item.name} <ChevronRight className="h-4 w-4 text-muted-foreground" /></TableCell>
-                  <TableCell className="text-muted-foreground">{item.subjectName}</TableCell>
-                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                    <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {(!data?.data || data.data.length === 0) && (
+    <>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Chapters</CardTitle>
+            <CardDescription>Subject chapters. Click to see its topics.</CardDescription>
+          </div>
+          <Button size="sm" onClick={openDialog}>
+            <Plus className="mr-2 h-4 w-4" /> Add Chapter
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <Skeleton className="h-64 w-full" /> : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">{subjectId ? 'No chapters found.' : 'Select a subject first.'}</TableCell>
+                  <TableHead>Order</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+              </TableHeader>
+              <TableBody>
+                {data?.data.map((item) => (
+                  <TableRow key={item.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectChapter(item.id)}>
+                    <TableCell>{item.orderIndex}</TableCell>
+                    <TableCell className="font-medium flex items-center gap-2">{item.name} <ChevronRight className="h-4 w-4 text-muted-foreground" /></TableCell>
+                    <TableCell className="text-muted-foreground">{item.subjectName}</TableCell>
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {(!data?.data || data.data.length === 0) && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">{subjectId ? 'No chapters found.' : 'Select a subject first, or add a chapter for any subject.'}</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Chapter</DialogTitle>
+            <DialogDescription>Create a new chapter under a subject.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Subject <span className="text-destructive">*</span></Label>
+              <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select subject" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subjectsData?.data.map(s => (
+                    <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.code}) — {s.standardName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="chap-name">Chapter Name <span className="text-destructive">*</span></Label>
+              <Input id="chap-name" placeholder="e.g. Real Numbers" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="chap-order">Order / Chapter Number</Label>
+              <Input id="chap-order" type="number" min={1} placeholder="1" value={orderIndex} onChange={e => setOrderIndex(e.target.value)} className="w-32" />
+              <p className="text-xs text-muted-foreground">Used to sort chapters in order.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} disabled={createChapter.isPending}>
+              {createChapter.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating…</> : 'Create Chapter'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
 function TopicsTab({ chapterId }: { chapterId?: number }) {
   const { data, isLoading } = useListTopics({ chapterId });
+  const { data: chaptersData } = useListChapters({});
   const deleteTopic = useDeleteTopic();
+  const createTopic = useCreateTopic();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [selectedChapter, setSelectedChapter] = useState<string>(chapterId ? String(chapterId) : '');
 
   const handleDelete = (id: number) => {
     deleteTopic.mutate({ id }, {
@@ -345,6 +649,32 @@ function TopicsTab({ chapterId }: { chapterId?: number }) {
         toast({ variant: 'destructive', title: 'Failed to delete', description: err.message });
       }
     });
+  };
+
+  const handleCreate = () => {
+    if (!name.trim() || !selectedChapter) {
+      toast({ variant: 'destructive', title: 'Name and chapter are required' });
+      return;
+    }
+    createTopic.mutate(
+      { data: { name: name.trim(), description: description.trim() || undefined, chapterId: parseInt(selectedChapter) } },
+      {
+        onSuccess: () => {
+          toast({ title: 'Topic created!' });
+          queryClient.invalidateQueries({ queryKey: getListTopicsQueryKey() });
+          setAddDialogOpen(false);
+          setName(''); setDescription('');
+        },
+        onError: (err) => {
+          toast({ variant: 'destructive', title: 'Failed to create topic', description: err.message });
+        }
+      }
+    );
+  };
+
+  const openAddDialog = () => {
+    setSelectedChapter(chapterId ? String(chapterId) : '');
+    setAddDialogOpen(true);
   };
 
   return (
@@ -368,7 +698,7 @@ function TopicsTab({ chapterId }: { chapterId?: number }) {
               <Sparkles className="mr-2 h-4 w-4" />
               Generate with AI
             </Button>
-            <Button size="sm" disabled={!chapterId}>
+            <Button size="sm" onClick={openAddDialog}>
               <Plus className="mr-2 h-4 w-4" /> Add Topic
             </Button>
           </div>
@@ -397,7 +727,6 @@ function TopicsTab({ chapterId }: { chapterId?: number }) {
                       <Badge variant={item.isActive ? 'default' : 'secondary'}>{item.isActive ? 'Active' : 'Inactive'}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
@@ -430,6 +759,44 @@ function TopicsTab({ chapterId }: { chapterId?: number }) {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Topic</DialogTitle>
+            <DialogDescription>Create a new learning topic under a chapter.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Chapter <span className="text-destructive">*</span></Label>
+              <Select value={selectedChapter} onValueChange={setSelectedChapter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select chapter" />
+                </SelectTrigger>
+                <SelectContent>
+                  {chaptersData?.data.map(c => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name} — {c.subjectName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="topic-name">Topic Name <span className="text-destructive">*</span></Label>
+              <Input id="topic-name" placeholder="e.g. Euclid's Division Lemma" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="topic-desc">Description</Label>
+              <Textarea id="topic-desc" placeholder="Optional description of this topic" value={description} onChange={e => setDescription(e.target.value)} rows={3} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} disabled={createTopic.isPending}>
+              {createTopic.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating…</> : 'Create Topic'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {chapterId && (
         <AiGenerateTopicsDialog
@@ -639,32 +1006,27 @@ function AiGenerateTopicsDialog({ open, onClose, chapterId, onSaved }: AiGenerat
                 {generatedTopics.map((topic, i) => (
                   <div
                     key={i}
+                    className={`flex items-start gap-3 rounded-lg p-3 cursor-pointer transition-colors ${selected.has(i) ? 'bg-primary/5 border border-primary/20' : 'hover:bg-muted/50'}`}
                     onClick={() => toggleSelect(i)}
-                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                      selected.has(i)
-                        ? 'bg-primary/5 border-primary/30'
-                        : 'bg-muted/30 border-transparent opacity-50'
-                    }`}
                   >
                     <Checkbox
                       checked={selected.has(i)}
                       onCheckedChange={() => toggleSelect(i)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="mt-0.5 shrink-0"
+                      className="mt-0.5"
                     />
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm leading-tight">{topic.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{topic.description}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">{topic.name}</p>
+                      {topic.description && (
+                        <p className="text-xs text-muted-foreground mt-1">{topic.description}</p>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
             </ScrollArea>
 
-            <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setStep('config')}>
-                Back
-              </Button>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setStep('config')}>Back</Button>
               <Button
                 onClick={() => saveMutation.mutate()}
                 disabled={selected.size === 0 || saveMutation.isPending}
