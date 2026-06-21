@@ -142,7 +142,8 @@ router.get("/analytics/monthly-report", requireAuth, async (req, res) => {
       GROUP BY month, year, label
       ORDER BY year, month
     `);
-    res.json((rows as unknown[]).map((r: unknown) => {
+    const rowArray = Array.isArray(rows) ? rows : Array.from(rows as Iterable<unknown>);
+    res.json(rowArray.map((r: unknown) => {
       const row = r as Record<string, unknown>;
       return {
         month: Number(row["month"]),
