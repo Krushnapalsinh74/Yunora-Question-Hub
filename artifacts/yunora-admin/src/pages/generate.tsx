@@ -63,7 +63,7 @@ export default function GeneratePage() {
   const { data: providers } = useListAiProviders();
   const { data: questionTypes } = useListQuestionTypes();
 
-  const selectedProvider = providers?.find(p => p.id === providerId);
+  const selectedProvider = providers?.find(p => p.id === Number(providerId));
 
   const generateMutation = useStartGeneration();
 

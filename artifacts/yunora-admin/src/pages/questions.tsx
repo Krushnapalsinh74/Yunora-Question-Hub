@@ -11,15 +11,15 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Search, Trash2, Edit, FileDown } from 'lucide-react';
+import { Search, Trash2, Edit } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format, parseISO } from 'date-fns';
+import { MathText } from '@/lib/math-text';
 
 export default function QuestionsPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   
-  // Basic debounce implementation for search
   React.useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 500);
     return () => clearTimeout(timer);
@@ -43,9 +43,9 @@ export default function QuestionsPage() {
 
   const getDifficultyColor = (diff: string) => {
     switch(diff) {
-      case 'easy': return 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20';
-      case 'medium': return 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20';
-      case 'hard': return 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20';
+      case 'easy': return 'bg-green-500/10 text-green-700 border-green-500/20';
+      case 'medium': return 'bg-amber-500/10 text-amber-700 border-amber-500/20';
+      case 'hard': return 'bg-red-500/10 text-red-700 border-red-500/20';
       default: return '';
     }
   };
@@ -88,32 +88,46 @@ export default function QuestionsPage() {
                         {q.subjectName} • {q.chapterName}
                       </span>
                     </div>
-                    <span className="font-medium text-base line-clamp-2">{q.question}</span>
+                    <span className="font-medium text-base line-clamp-2">
+                      <MathText>{q.question}</MathText>
+                    </span>
                   </div>
                 </AccordionTrigger>
+
                 <AccordionContent className="pt-2 pb-4 border-t">
                   <div className="space-y-4">
+
+                    {/* Options */}
                     {q.options && (
                       <div>
                         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Options</h4>
-                        <div className="bg-muted/50 p-3 rounded-md text-sm whitespace-pre-wrap">
-                          {q.options}
+                        <div className="bg-muted/50 rounded-md divide-y divide-border overflow-hidden">
+                          {q.options.split('\n').filter(Boolean).map((opt, idx) => (
+                            <div key={idx} className="px-3 py-2 text-sm">
+                              <MathText>{opt}</MathText>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}
+
+                    {/* Correct Answer */}
                     <div>
                       <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Correct Answer</h4>
                       <div className="bg-primary/5 text-primary border border-primary/10 p-3 rounded-md text-sm font-medium">
-                        {q.correctAnswer}
+                        <MathText>{q.correctAnswer}</MathText>
                       </div>
                     </div>
+
+                    {/* Explanation */}
                     <div>
                       <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Explanation</h4>
-                      <div className="text-sm text-muted-foreground">
-                        {q.explanation}
+                      <div className="text-sm text-muted-foreground leading-relaxed bg-muted/30 p-3 rounded-md">
+                        <MathText block>{q.explanation}</MathText>
                       </div>
                     </div>
-                    
+
+                    {/* Metadata + Actions */}
                     <div className="flex flex-wrap items-center justify-between pt-4 gap-4">
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
                         <span title="Quality Score">Score: {q.qualityScore}/10</span>
@@ -121,8 +135,14 @@ export default function QuestionsPage() {
                         <span>{q.generatedAt ? format(parseISO(q.generatedAt), 'MMM d, yyyy') : ''}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm"><Edit className="h-4 w-4 mr-2" /> Edit</Button>
-                        <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDelete(q.id)}><Trash2 className="h-4 w-4 mr-2" /> Delete</Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => handleDelete(q.id)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" /> Delete
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -138,7 +158,7 @@ export default function QuestionsPage() {
           </div>
           <h3 className="text-lg font-semibold">No questions found</h3>
           <p className="text-muted-foreground max-w-sm mt-2 mb-6">
-            We couldn't find any questions matching your search. Try adjusting your filters or generating new ones.
+            No questions yet. Generate some from the Generate tab.
           </p>
           <Button variant="outline" onClick={() => setSearch('')}>Clear search</Button>
         </Card>

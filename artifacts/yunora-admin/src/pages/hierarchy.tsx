@@ -834,7 +834,7 @@ function AiGenerateTopicsDialog({ open, onClose, chapterId, onSaved }: AiGenerat
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [chapterName, setChapterName] = useState('');
 
-  const selectedProvider = providers?.find(p => p.id === parseInt(providerId));
+  const selectedProvider = providers?.find(p => p.id === Number(parseInt(providerId)));
 
   const generateMutation = useMutation({
     mutationFn: async () => {
