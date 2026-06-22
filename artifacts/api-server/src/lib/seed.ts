@@ -12,7 +12,7 @@ import {
 import { eq, count } from "drizzle-orm";
 import { logger } from "./logger.js";
 
-const ADMIN_EMAIL = "admin@yunora.ai";
+const ADMIN_EMAIL = "admin@admin.com";
 const ADMIN_PASSWORD = "admin123";
 
 async function seedAdmin() {
@@ -27,7 +27,7 @@ async function seedAdmin() {
     role: "admin",
     isActive: true,
   });
-  logger.info("Seeded admin user: admin@yunora.ai / admin123");
+  logger.info("Seeded admin user: admin@admin.com / admin123");
 }
 
 async function seedQuestionTypes() {
