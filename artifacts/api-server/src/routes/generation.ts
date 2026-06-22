@@ -17,7 +17,7 @@ interface GenerationRequest {
   chapterId: number;
   topicId: number;
   questionType: string;
-  difficulty: "easy" | "medium" | "hard";
+  difficulty: "easy" | "medium" | "hard" | "advanced";
   count: number;
   providerId: number;
   model: string;
@@ -251,10 +251,11 @@ async function runMultiAgentGeneration(
     easy: "recall-based, basic understanding, solvable within 20 seconds, success rate > 80%, score 1-3",
     medium: "conceptual understanding, application-based, 30-60 seconds, success rate 50-70%, score 4-7",
     hard: "deep reasoning, multi-step thinking, concept integration, HOTS, analytical, score 8-10",
+    advanced: "very hard — olympiad/competitive level, highly abstract, multi-concept synthesis, requires deep expertise, >3 minutes, score 9-10",
   };
 
-  const defaultDiffScore = params.difficulty === "easy" ? 2 : params.difficulty === "medium" ? 5 : 8;
-  const defaultSolveTime = params.difficulty === "easy" ? 20 : params.difficulty === "medium" ? 45 : 120;
+  const defaultDiffScore = params.difficulty === "easy" ? 2 : params.difficulty === "medium" ? 5 : params.difficulty === "hard" ? 8 : 10;
+  const defaultSolveTime = params.difficulty === "easy" ? 20 : params.difficulty === "medium" ? 45 : params.difficulty === "hard" ? 120 : 240;
   const logLines: string[] = [];
 
   // Each AI call is limited to MAX_PER_BATCH questions to stay within output token limits.

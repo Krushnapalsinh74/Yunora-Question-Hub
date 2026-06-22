@@ -827,7 +827,6 @@ function AiGenerateTopicsDialog({ open, onClose, chapterId, onSaved }: AiGenerat
 
   const [providerId, setProviderId] = useState<string>('');
   const [model, setModel] = useState<string>('');
-  const [count, setCount] = useState<number>(10);
 
   const [step, setStep] = useState<'config' | 'review'>('config');
   const [generatedTopics, setGeneratedTopics] = useState<AiTopic[]>([]);
@@ -844,7 +843,7 @@ function AiGenerateTopicsDialog({ open, onClose, chapterId, onSaved }: AiGenerat
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ chapterId, providerId: parseInt(providerId), model, count }),
+        body: JSON.stringify({ chapterId, providerId: parseInt(providerId), model }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
@@ -954,17 +953,8 @@ function AiGenerateTopicsDialog({ open, onClose, chapterId, onSaved }: AiGenerat
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label>Number of topics to generate</Label>
-                <Input
-                  type="number"
-                  min={3}
-                  max={20}
-                  value={count}
-                  onChange={(e) => setCount(parseInt(e.target.value) || 10)}
-                  className="w-32"
-                />
-                <p className="text-xs text-muted-foreground">AI will generate this many topic suggestions (3–20). You can deselect any before saving.</p>
+              <div className="rounded-md bg-muted/60 px-4 py-3 text-sm text-muted-foreground">
+                AI will determine the appropriate number of topics based on the real curriculum for this chapter. You can review and deselect any topics before saving.
               </div>
             </div>
 

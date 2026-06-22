@@ -84,11 +84,10 @@ router.delete("/topics/:id", requireAuth, async (req, res) => {
 // AI-generate topic suggestions for a chapter (preview only, does not save)
 router.post("/topics/ai-generate", requireAuth, async (req, res) => {
   try {
-    const { chapterId, providerId, model, count = 10 } = req.body as {
+    const { chapterId, providerId, model } = req.body as {
       chapterId: number;
       providerId: number;
       model: string;
-      count?: number;
     };
 
     if (!chapterId || !providerId || !model) {
@@ -115,17 +114,19 @@ router.post("/topics/ai-generate", requireAuth, async (req, res) => {
     const systemPrompt = `You are a curriculum expert for ${board?.name ?? "Indian"} board, ${standard?.name ?? ""}, ${subject?.name ?? ""}.
 Generate curriculum-aligned topic names with clear learning objectives. Return ONLY a valid JSON array. No markdown outside JSON.`;
 
-    const userPrompt = `Generate ${count} comprehensive topic suggestions for the chapter: "${chapter.name}" (Subject: ${subject?.name ?? ""}, Board: ${board?.name ?? ""}, ${standard?.name ?? ""}).
+    const userPrompt = `List ALL the real topics that are covered in the chapter: "${chapter.name}" (Subject: ${subject?.name ?? ""}, Board: ${board?.name ?? ""}, ${standard?.name ?? ""}).
 
 Already existing topics (avoid duplicating these): ${existingNames}
 
 Requirements:
-- Each topic should represent one clearly bounded learning concept
+- Generate exactly as many topics as this chapter genuinely has in the real curriculum — no more, no less
+- Each topic should represent one clearly bounded learning concept from the actual syllabus
 - Cover the full breadth of the chapter systematically
-- Topics should be ordered from foundational to advanced
+- Order from foundational to advanced
 - Include both conceptual and application topics
+- Do NOT pad with extra topics — only include topics that truly belong to this chapter
 
-Return a JSON array of exactly ${count} objects:
+Return a JSON array (number of items = actual topic count for this chapter):
 [
   {
     "name": "Topic name (concise, curriculum-standard phrasing)",
