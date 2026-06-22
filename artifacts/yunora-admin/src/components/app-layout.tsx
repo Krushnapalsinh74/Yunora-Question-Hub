@@ -31,16 +31,9 @@ const navItems = [
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
 ];
 
-export function AppLayout({ children }: { children: React.ReactNode }) {
+function NavLinks() {
   const [location] = useLocation();
-  const { logout, user } = useAuthStore();
-  const { theme, toggle } = useThemeStore();
-
-  const handleLogout = () => {
-    logout();
-  };
-
-  const NavLinks = () => (
+  return (
     <div className="flex flex-col gap-1 w-full">
       {navItems.map((item) => {
         const isActive = location.startsWith(item.href);
@@ -58,6 +51,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       })}
     </div>
   );
+}
+
+export function AppLayout({ children }: { children: React.ReactNode }) {
+  const { logout, user } = useAuthStore();
+  const { theme, toggle } = useThemeStore();
+
+  const handleLogout = () => {
+    logout();
+  };
 
   return (
     <div className="min-h-screen w-full bg-background flex flex-col md:flex-row">
