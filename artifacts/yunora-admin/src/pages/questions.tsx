@@ -526,15 +526,13 @@ function QuestionList({ questions, selectedIds, onToggleSelect, onDelete }: Ques
             key={q.id}
             className={`flex items-start gap-2 border rounded-lg bg-card shadow-sm transition-colors ${isSelected ? 'border-primary/50 bg-primary/5' : 'border-border'}`}
           >
-            {/* ── Checkbox — completely separate from the expand button ── */}
-            <button
-              type="button"
-              onClick={() => onToggleSelect(q.id)}
-              className="mt-[1.15rem] ml-3 shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            {/* ── Checkbox — Radix Checkbox IS a button, so don't wrap in another button ── */}
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={() => onToggleSelect(q.id)}
+              className="mt-[1.15rem] ml-3 shrink-0"
               aria-label={isSelected ? 'Deselect' : 'Select'}
-            >
-              <Checkbox checked={isSelected} className="pointer-events-none" />
-            </button>
+            />
 
             {/* ── Card body ── */}
             <div className="flex-1 min-w-0">
