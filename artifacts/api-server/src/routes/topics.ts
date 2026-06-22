@@ -133,31 +133,64 @@ Return a JSON array of exactly ${count} objects:
   }
 ]`;
 
-    const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        max_tokens: 3000,
-        temperature: 0.6,
-      }),
-    });
+    const OPENAI_COMPAT: Record<string, string> = {
+      openai:        "https://api.openai.com/v1/chat/completions",
+      github_models: "https://models.inference.ai.azure.com/chat/completions",
+      groq:          "https://api.groq.com/openai/v1/chat/completions",
+      gemini:        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      azure_openai:  "https://models.inference.ai.azure.com/chat/completions",
+    };
 
-    if (!response.ok) {
-      const text = await response.text();
-      res.status(502).json({ error: `AI API error: ${response.status} ${text.slice(0, 200)}` });
-      return;
+    let raw: string;
+
+    if (provider.providerType === "anthropic") {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": token,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 3000,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }],
+        }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        res.status(502).json({ error: `Anthropic API error: ${response.status} ${text.slice(0, 200)}` });
+        return;
+      }
+      const data = await response.json() as { content: Array<{ type: string; text: string }> };
+      raw = data.content?.find(c => c.type === "text")?.text ?? "[]";
+    } else {
+      const endpoint = OPENAI_COMPAT[provider.providerType] ?? OPENAI_COMPAT.github_models;
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          max_tokens: 3000,
+          temperature: 0.6,
+        }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        res.status(502).json({ error: `AI API error (${provider.providerType}): ${response.status} ${text.slice(0, 200)}` });
+        return;
+      }
+      const data = await response.json() as { choices: Array<{ message: { content: string } }> };
+      raw = data.choices[0]?.message?.content ?? "[]";
     }
-
-    const data = await response.json() as { choices: Array<{ message: { content: string } }> };
-    const raw = data.choices[0]?.message?.content ?? "[]";
 
     // Parse JSON from response
     let topics: Array<{ name: string; description: string }> = [];
