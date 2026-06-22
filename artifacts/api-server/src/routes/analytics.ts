@@ -130,7 +130,7 @@ router.get("/analytics/recent-activity", requireAuth, async (req, res) => {
 
 router.get("/analytics/monthly-report", requireAuth, async (req, res) => {
   try {
-    const rows = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT
         EXTRACT(MONTH FROM generated_at)::int AS month,
         EXTRACT(YEAR FROM generated_at)::int AS year,
@@ -142,7 +142,7 @@ router.get("/analytics/monthly-report", requireAuth, async (req, res) => {
       GROUP BY month, year, label
       ORDER BY year, month
     `);
-    const rowArray = Array.isArray(rows) ? rows : Array.from(rows as Iterable<unknown>);
+    const rowArray: unknown[] = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? []);
     res.json(rowArray.map((r: unknown) => {
       const row = r as Record<string, unknown>;
       return {
