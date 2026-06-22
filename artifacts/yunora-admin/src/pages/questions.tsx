@@ -13,9 +13,8 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Search, Trash2, FileDown, X, CheckSquare, Square } from 'lucide-react';
+import { Search, Trash2, FileDown, X, CheckSquare, Square, ChevronDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format, parseISO } from 'date-fns';
 import { MathText } from '@/lib/math-text';
@@ -299,16 +298,6 @@ export default function QuestionsPage() {
     }
   };
 
-  const getDifficultyColor = (diff: string) => {
-    switch (diff) {
-      case 'easy':     return 'bg-green-500/10 text-green-700 border-green-500/20';
-      case 'medium':   return 'bg-amber-500/10 text-amber-700 border-amber-500/20';
-      case 'hard':     return 'bg-red-500/10 text-red-700 border-red-500/20';
-      case 'advanced': return 'bg-purple-500/10 text-purple-700 border-purple-500/20';
-      default:         return '';
-    }
-  };
-
   const activeFilters = [difficulty, questionType].filter(Boolean).length;
   const clearFilters = () => { setDifficulty(''); setQuestionType(''); setSearch(''); setPage(1); };
 
@@ -452,88 +441,12 @@ export default function QuestionsPage() {
           {[1,2,3].map(i => <Skeleton key={i} className="h-32 w-full" />)}
         </div>
       ) : data?.data && data.data.length > 0 ? (
-        <div className="space-y-3">
-          <Accordion type="single" collapsible className="w-full space-y-3">
-            {data.data.map((q) => {
-              const isSelected = selectedIds.has(q.id);
-              return (
-                <AccordionItem
-                  key={q.id}
-                  value={`q-${q.id}`}
-                  className={`border rounded-lg bg-card px-4 shadow-sm transition-colors ${isSelected ? 'border-primary/50 bg-primary/5' : ''}`}
-                >
-                  <AccordionTrigger className="hover:no-underline py-4">
-                    <div className="flex items-start gap-3 w-full pr-4">
-                      {/* Checkbox — stop propagation so accordion doesn't toggle */}
-                      <div
-                        onClick={(e) => { e.stopPropagation(); toggleSelect(q.id); }}
-                        className="mt-0.5 shrink-0"
-                      >
-                        <Checkbox checked={isSelected} className="pointer-events-none" />
-                      </div>
-                      <div className="flex flex-col items-start text-left gap-2 flex-1 min-w-0">
-                        <div className="flex items-center gap-2 w-full">
-                          <Badge variant="outline" className={getDifficultyColor(q.difficulty)}>
-                            {q.difficulty.toUpperCase()}
-                          </Badge>
-                          <Badge variant="outline">{q.questionType}</Badge>
-                          <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">
-                            {q.subjectName} • {q.chapterName}
-                          </span>
-                        </div>
-                        <span className="font-medium text-base line-clamp-2">
-                          <MathText>{q.question}</MathText>
-                        </span>
-                      </div>
-                    </div>
-                  </AccordionTrigger>
-
-                  <AccordionContent className="pt-2 pb-4 border-t ml-9">
-                    <div className="space-y-4">
-                      {q.options && (
-                        <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Options</h4>
-                          <div className="bg-muted/50 rounded-md divide-y divide-border overflow-hidden">
-                            {q.options.split('\n').filter(Boolean).map((opt, idx) => (
-                              <div key={idx} className="px-3 py-2 text-sm"><MathText>{opt}</MathText></div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <div>
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Correct Answer</h4>
-                        <div className="bg-primary/5 text-primary border border-primary/10 p-3 rounded-md text-sm font-medium">
-                          <MathText>{q.correctAnswer}</MathText>
-                        </div>
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Explanation</h4>
-                        <div className="text-sm text-muted-foreground leading-relaxed bg-muted/30 p-3 rounded-md">
-                          <MathText block>{q.explanation}</MathText>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center justify-between pt-4 gap-4">
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          <span title="Quality Score">Score: {q.qualityScore}/10</span>
-                          <span>Model: {q.modelUsed}</span>
-                          <span>{q.generatedAt ? format(parseISO(q.generatedAt), 'MMM d, yyyy') : ''}</span>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          onClick={() => handleDelete(q.id)}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" /> Delete
-                        </Button>
-                      </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              );
-            })}
-          </Accordion>
-        </div>
+        <QuestionList
+          questions={data.data}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
+          onDelete={handleDelete}
+        />
       ) : (
         <Card className="flex flex-col items-center justify-center p-12 text-center border-dashed">
           <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
@@ -560,6 +473,142 @@ export default function QuestionsPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QuestionList — custom expand/collapse avoids Accordion nested-button issues
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface Question {
+  id: number;
+  question: string;
+  difficulty: string;
+  questionType: string;
+  options?: string | null;
+  correctAnswer?: string | null;
+  explanation?: string | null;
+  qualityScore?: number | null;
+  modelUsed?: string | null;
+  generatedAt?: string | null;
+  subjectName?: string | null;
+  chapterName?: string | null;
+}
+
+interface QuestionListProps {
+  questions: Question[];
+  selectedIds: Set<number>;
+  onToggleSelect: (id: number) => void;
+  onDelete: (id: number) => void;
+}
+
+function getDifficultyColor(diff: string) {
+  switch (diff) {
+    case 'easy':     return 'bg-green-500/10 text-green-700 border-green-500/20';
+    case 'medium':   return 'bg-amber-500/10 text-amber-700 border-amber-500/20';
+    case 'hard':     return 'bg-red-500/10 text-red-700 border-red-500/20';
+    case 'advanced': return 'bg-purple-500/10 text-purple-700 border-purple-500/20';
+    default:         return '';
+  }
+}
+
+function QuestionList({ questions, selectedIds, onToggleSelect, onDelete }: QuestionListProps) {
+  const [openId, setOpenId] = useState<number | null>(null);
+
+  return (
+    <div className="space-y-3">
+      {questions.map((q) => {
+        const isSelected = selectedIds.has(q.id);
+        const isOpen = openId === q.id;
+        return (
+          <div
+            key={q.id}
+            className={`flex items-start gap-2 border rounded-lg bg-card shadow-sm transition-colors ${isSelected ? 'border-primary/50 bg-primary/5' : 'border-border'}`}
+          >
+            {/* ── Checkbox — completely separate from the expand button ── */}
+            <button
+              type="button"
+              onClick={() => onToggleSelect(q.id)}
+              className="mt-[1.15rem] ml-3 shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={isSelected ? 'Deselect' : 'Select'}
+            >
+              <Checkbox checked={isSelected} className="pointer-events-none" />
+            </button>
+
+            {/* ── Card body ── */}
+            <div className="flex-1 min-w-0">
+              {/* Header row — clicking this toggles expand */}
+              <button
+                type="button"
+                onClick={() => setOpenId(isOpen ? null : q.id)}
+                className="w-full text-left px-3 py-4 flex items-start gap-3 hover:bg-muted/30 transition-colors rounded-r-lg"
+              >
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className={getDifficultyColor(q.difficulty)}>
+                      {q.difficulty.toUpperCase()}
+                    </Badge>
+                    <Badge variant="outline">{q.questionType}</Badge>
+                    <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">
+                      {q.subjectName} • {q.chapterName}
+                    </span>
+                  </div>
+                  <span className="font-medium text-base line-clamp-2 block">
+                    <MathText>{q.question}</MathText>
+                  </span>
+                </div>
+                <ChevronDown className={`h-4 w-4 mt-1 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Expanded content */}
+              {isOpen && (
+                <div className="px-4 pb-4 pt-2 border-t space-y-4">
+                  {q.options && (
+                    <div>
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Options</h4>
+                      <div className="bg-muted/50 rounded-md divide-y divide-border overflow-hidden">
+                        {q.options.split('\n').filter(Boolean).map((opt, idx) => (
+                          <div key={idx} className="px-3 py-2 text-sm"><MathText>{opt}</MathText></div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Correct Answer</h4>
+                    <div className="bg-primary/5 text-primary border border-primary/10 p-3 rounded-md text-sm font-medium">
+                      <MathText>{q.correctAnswer ?? ''}</MathText>
+                    </div>
+                  </div>
+                  {q.explanation && (
+                    <div>
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Explanation</h4>
+                      <div className="text-sm text-muted-foreground leading-relaxed bg-muted/30 p-3 rounded-md">
+                        <MathText block>{q.explanation}</MathText>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center justify-between pt-2 gap-4">
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                      <span>Score: {q.qualityScore ?? '—'}/10</span>
+                      {q.modelUsed && <span>Model: {q.modelUsed}</span>}
+                      {q.generatedAt && <span>{format(parseISO(q.generatedAt), 'MMM d, yyyy')}</span>}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => onDelete(q.id)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" /> Delete
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
