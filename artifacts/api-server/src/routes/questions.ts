@@ -91,6 +91,16 @@ router.patch("/questions/:id", requireAuth, async (req, res) => {
   }
 });
 
+router.delete("/questions", requireAuth, async (req, res) => {
+  try {
+    await db.delete(questionsTable);
+    res.status(204).send();
+  } catch (err) {
+    req.log.error({ err }, "Delete all questions error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.delete("/questions/:id", requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params["id"]!);

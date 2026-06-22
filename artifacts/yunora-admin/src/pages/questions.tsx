@@ -30,6 +30,8 @@ export default function QuestionsPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const [deletingAll, setDeletingAll] = useState(false);
+
   const handleDelete = (id: number) => {
     if (confirm("Delete this question?")) {
       deleteQuestion.mutate({ id }, {
@@ -38,6 +40,22 @@ export default function QuestionsPage() {
           queryClient.invalidateQueries({ queryKey: getListQuestionsQueryKey() });
         }
       });
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    const total = data?.total ?? 0;
+    if (!confirm(`Delete all ${total} question${total !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    setDeletingAll(true);
+    try {
+      const res = await fetch('/api/questions', { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error('Failed');
+      toast({ title: 'All questions deleted' });
+      queryClient.invalidateQueries({ queryKey: getListQuestionsQueryKey() });
+    } catch {
+      toast({ title: 'Error deleting questions', variant: 'destructive' });
+    } finally {
+      setDeletingAll(false);
     }
   };
 
@@ -57,14 +75,28 @@ export default function QuestionsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Question Library</h1>
           <p className="text-muted-foreground">Browse, edit, and curate generated questions.</p>
         </div>
-        <div className="w-full md:w-72 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search questions..." 
-            className="pl-9"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <div className="w-full md:w-72 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input 
+              placeholder="Search questions..." 
+              className="pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          {data?.total != null && data.total > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDeleteAll}
+              disabled={deletingAll}
+              className="shrink-0"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {deletingAll ? 'Deleting…' : `Delete All (${data.total})`}
+            </Button>
+          )}
         </div>
       </div>
 
