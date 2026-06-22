@@ -31,7 +31,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Trash2, Edit, Loader2, Sparkles, CheckCircle2, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Loader2, Sparkles, CheckCircle2, ChevronRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
@@ -254,8 +254,21 @@ function StandardsTab({ boardId, onSelectStandard }: { boardId?: number, onSelec
   const { data, isLoading } = useListStandards({ boardId });
   const { data: boardsData } = useListBoards();
   const createStandard = useCreateStandard();
+  const deleteStandard = useDeleteStandard();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const handleDelete = (id: number) => {
+    deleteStandard.mutate({ id }, {
+      onSuccess: () => {
+        toast({ title: 'Standard deleted' });
+        queryClient.invalidateQueries({ queryKey: getListStandardsQueryKey() });
+      },
+      onError: (err) => {
+        toast({ variant: 'destructive', title: 'Failed to delete standard', description: err.message });
+      }
+    });
+  };
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState('');
@@ -318,7 +331,21 @@ function StandardsTab({ boardId, onSelectStandard }: { boardId?: number, onSelec
                     <TableCell className="font-medium flex items-center gap-2">{item.name} <ChevronRight className="h-4 w-4 text-muted-foreground" /></TableCell>
                     <TableCell className="text-muted-foreground">{item.boardName}</TableCell>
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete standard?</AlertDialogTitle>
+                            <AlertDialogDescription>This will permanently delete <strong>{item.name}</strong> and all its subjects, chapters, and topics.</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDelete(item.id)} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -379,8 +406,21 @@ function SubjectsTab({ standardId, onSelectSubject }: { standardId?: number, onS
   const { data, isLoading } = useListSubjects({ standardId });
   const { data: standardsData } = useListStandards({});
   const createSubject = useCreateSubject();
+  const deleteSubject = useDeleteSubject();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const handleDelete = (id: number) => {
+    deleteSubject.mutate({ id }, {
+      onSuccess: () => {
+        toast({ title: 'Subject deleted' });
+        queryClient.invalidateQueries({ queryKey: getListSubjectsQueryKey() });
+      },
+      onError: (err) => {
+        toast({ variant: 'destructive', title: 'Failed to delete subject', description: err.message });
+      }
+    });
+  };
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState('');
@@ -443,7 +483,21 @@ function SubjectsTab({ standardId, onSelectSubject }: { standardId?: number, onS
                     <TableCell className="font-medium flex items-center gap-2">{item.name} <ChevronRight className="h-4 w-4 text-muted-foreground" /></TableCell>
                     <TableCell className="text-muted-foreground">{item.standardName}</TableCell>
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete subject?</AlertDialogTitle>
+                            <AlertDialogDescription>This will permanently delete <strong>{item.name}</strong> and all its chapters, topics, and questions.</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDelete(item.id)} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -504,8 +558,21 @@ function ChaptersTab({ subjectId, onSelectChapter }: { subjectId?: number, onSel
   const { data, isLoading } = useListChapters({ subjectId });
   const { data: subjectsData } = useListSubjects({});
   const createChapter = useCreateChapter();
+  const deleteChapter = useDeleteChapter();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const handleDelete = (id: number) => {
+    deleteChapter.mutate({ id }, {
+      onSuccess: () => {
+        toast({ title: 'Chapter deleted' });
+        queryClient.invalidateQueries({ queryKey: getListChaptersQueryKey() });
+      },
+      onError: (err) => {
+        toast({ variant: 'destructive', title: 'Failed to delete chapter', description: err.message });
+      }
+    });
+  };
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState('');
@@ -568,7 +635,21 @@ function ChaptersTab({ subjectId, onSelectChapter }: { subjectId?: number, onSel
                     <TableCell className="font-medium flex items-center gap-2">{item.name} <ChevronRight className="h-4 w-4 text-muted-foreground" /></TableCell>
                     <TableCell className="text-muted-foreground">{item.subjectName}</TableCell>
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete chapter?</AlertDialogTitle>
+                            <AlertDialogDescription>This will permanently delete <strong>{item.name}</strong> and all its topics and questions.</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDelete(item.id)} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </TableCell>
                   </TableRow>
                 ))}
