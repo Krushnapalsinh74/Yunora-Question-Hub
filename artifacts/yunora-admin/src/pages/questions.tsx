@@ -29,18 +29,24 @@ function stripMath(text: string): string {
     .replace(/\{|\}/g, '');
 }
 
+const PAGE_SIZE = 50;
+
 export default function QuestionsPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [page, setPage] = useState(1);
   const token = useAuthStore((s) => s.token);
   
   React.useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 500);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 500);
     return () => clearTimeout(timer);
   }, [search]);
 
-  const { data, isLoading } = useListQuestions({ search: debouncedSearch });
+  const { data, isLoading } = useListQuestions({ search: debouncedSearch, page, limit: PAGE_SIZE });
   const deleteQuestion = useDeleteQuestion();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -409,6 +415,35 @@ export default function QuestionsPage() {
           </p>
           <Button variant="outline" onClick={() => setSearch('')}>Clear search</Button>
         </Card>
+      )}
+
+      {data && data.total > PAGE_SIZE && (
+        <div className="flex items-center justify-between pt-4 border-t">
+          <p className="text-sm text-muted-foreground">
+            Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, data.total)} of {data.total} questions
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground px-2">
+              Page {page} of {Math.ceil(data.total / PAGE_SIZE)}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => p + 1)}
+              disabled={page * PAGE_SIZE >= data.total}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

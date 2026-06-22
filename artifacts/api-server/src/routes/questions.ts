@@ -40,9 +40,9 @@ async function enrichQuestion(q: typeof questionsTable.$inferSelect) {
 
 router.get("/questions", requireAuth, async (req, res) => {
   try {
-    const { page = "1", limit = "20", ...filters } = req.query as Record<string, string>;
+    const { page = "1", limit = "50", ...filters } = req.query as Record<string, string>;
     const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(100, parseInt(limit));
+    const limitNum = Math.min(200, parseInt(limit));
     const offset = (pageNum - 1) * limitNum;
     const where = buildQuestionWhere(filters);
 
