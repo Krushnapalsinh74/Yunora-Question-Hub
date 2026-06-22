@@ -10,7 +10,7 @@ import {
   useListQuestionTypes,
   useStartGeneration,
 } from '@workspace/api-client-react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -53,11 +53,11 @@ export default function GeneratePage() {
     resolver: zodResolver(baseSchema),
   });
 
-  const boardId = form.watch('boardId');
-  const standardId = form.watch('standardId');
-  const subjectId = form.watch('subjectId');
-  const chapterId = form.watch('chapterId');
-  const providerId = form.watch('providerId');
+  const boardId = useWatch({ control: form.control, name: 'boardId' });
+  const standardId = useWatch({ control: form.control, name: 'standardId' });
+  const subjectId = useWatch({ control: form.control, name: 'subjectId' });
+  const chapterId = useWatch({ control: form.control, name: 'chapterId' });
+  const providerId = useWatch({ control: form.control, name: 'providerId' });
 
   const { data: boards } = useListBoards();
   const { data: standards } = useListStandards({ boardId });
