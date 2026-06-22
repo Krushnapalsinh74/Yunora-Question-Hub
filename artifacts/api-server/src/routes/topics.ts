@@ -144,6 +144,9 @@ Return a JSON array (number of items = actual topic count for this chapter):
 
     let raw: string;
 
+    const isRateLimit = (status: number) => status === 429 || status === 529;
+    const rateLimitMsg = "The AI provider is rate-limited or overloaded. Please wait a moment and try again, or switch to a different model/provider.";
+
     if (provider.providerType === "anthropic") {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -161,7 +164,8 @@ Return a JSON array (number of items = actual topic count for this chapter):
       });
       if (!response.ok) {
         const text = await response.text();
-        res.status(502).json({ error: `Anthropic API error: ${response.status} ${text.slice(0, 200)}` });
+        req.log.warn({ status: response.status, body: text.slice(0, 300) }, "Anthropic API error");
+        res.status(502).json({ error: isRateLimit(response.status) ? rateLimitMsg : `Anthropic API error ${response.status}: ${text.slice(0, 200)}` });
         return;
       }
       const data = await response.json() as { content: Array<{ type: string; text: string }> };
@@ -186,7 +190,8 @@ Return a JSON array (number of items = actual topic count for this chapter):
       });
       if (!response.ok) {
         const text = await response.text();
-        res.status(502).json({ error: `AI API error (${provider.providerType}): ${response.status} ${text.slice(0, 200)}` });
+        req.log.warn({ providerType: provider.providerType, status: response.status, body: text.slice(0, 300) }, "AI provider error");
+        res.status(502).json({ error: isRateLimit(response.status) ? rateLimitMsg : `AI API error (${provider.providerType}) ${response.status}: ${text.slice(0, 200)}` });
         return;
       }
       const data = await response.json() as { choices: Array<{ message: { content: string } }> };
