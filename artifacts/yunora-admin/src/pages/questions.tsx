@@ -15,10 +15,12 @@ import { Search, Trash2, Edit } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format, parseISO } from 'date-fns';
 import { MathText } from '@/lib/math-text';
+import { useAuthStore } from '@/hooks/use-auth';
 
 export default function QuestionsPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const token = useAuthStore((s) => s.token);
   
   React.useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 500);
@@ -48,7 +50,10 @@ export default function QuestionsPage() {
     if (!confirm(`Delete all ${total} question${total !== 1 ? 's' : ''}? This cannot be undone.`)) return;
     setDeletingAll(true);
     try {
-      const res = await fetch('/api/questions', { method: 'DELETE', credentials: 'include' });
+      const res = await fetch('/api/questions', {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
       if (!res.ok) throw new Error('Failed');
       toast({ title: 'All questions deleted' });
       queryClient.invalidateQueries({ queryKey: getListQuestionsQueryKey() });
