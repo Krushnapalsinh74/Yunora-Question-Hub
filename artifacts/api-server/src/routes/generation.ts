@@ -38,8 +38,48 @@ interface AgentResult {
   difficultyVerified: boolean;
 }
 
-async function callAI(token: string, model: string, systemPrompt: string, userPrompt: string): Promise<string> {
-  const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
+const OPENAI_COMPAT_ENDPOINTS: Record<string, string> = {
+  openai:        "https://api.openai.com/v1/chat/completions",
+  github_models: "https://models.inference.ai.azure.com/chat/completions",
+  groq:          "https://api.groq.com/openai/v1/chat/completions",
+  gemini:        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+  azure_openai:  "https://models.inference.ai.azure.com/chat/completions",
+};
+
+async function callAI(
+  token: string,
+  model: string,
+  providerType: string,
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<string> {
+  // ── Anthropic Claude — uses a different API format ──────────────────────
+  if (providerType === "anthropic") {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": token,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 8192,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
+      }),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Anthropic API error ${response.status}: ${text.slice(0, 300)}`);
+    }
+    const data = await response.json() as { content: Array<{ type: string; text: string }> };
+    return data.content?.find(c => c.type === "text")?.text ?? "";
+  }
+
+  // ── OpenAI-compatible endpoints (OpenAI, GitHub Models, Groq, Gemini) ──
+  const endpoint = OPENAI_COMPAT_ENDPOINTS[providerType] ?? OPENAI_COMPAT_ENDPOINTS.github_models;
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -57,7 +97,7 @@ async function callAI(token: string, model: string, systemPrompt: string, userPr
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`AI API error: ${response.status} ${text.slice(0, 300)}`);
+    throw new Error(`AI API error (${providerType}) ${response.status}: ${text.slice(0, 300)}`);
   }
   const data = await response.json() as { choices: Array<{ message: { content: string } }> };
   return data.choices[0]?.message?.content ?? "";
@@ -118,6 +158,7 @@ interface Review {
 async function generateBatch(
   token: string,
   model: string,
+  providerType: string,
   params: GenerationRequest,
   context: { topicName: string; chapterName: string; subjectName: string; boardName: string; standardName: string },
   count: number,
@@ -160,13 +201,14 @@ Requirements for each question:
 Return JSON array with exactly ${count} items:
 [{"question":"...","correctAnswer":"...","options":${isMcq ? '"A) ...\\nB) ...\\nC) ...\\nD) ..."' : 'null'},"explanation":"...","learningObjective":"...","estimatedSolveTime":30}]`;
 
-  const raw = await callAI(token, model, system, prompt);
+  const raw = await callAI(token, model, providerType, system, prompt);
   return parseJSON<RawCandidate[]>(raw) ?? [];
 }
 
 async function validateBatch(
   token: string,
   model: string,
+  providerType: string,
   candidates: RawCandidate[],
   params: GenerationRequest,
   context: { topicName: string; chapterName: string; subjectName: string; boardName: string; standardName: string },
@@ -194,13 +236,14 @@ Return JSON array:
   "feedback": "Good question." 
 }]`;
 
-  const raw = await callAI(token, model, system, prompt);
+  const raw = await callAI(token, model, providerType, system, prompt);
   return parseJSON<Review[]>(raw) ?? [];
 }
 
 async function runMultiAgentGeneration(
   token: string,
   model: string,
+  providerType: string,
   params: GenerationRequest,
   context: { topicName: string; chapterName: string; subjectName: string; boardName: string; standardName: string }
 ): Promise<{ results: AgentResult[]; agentLog: string }> {
@@ -233,7 +276,7 @@ async function runMultiAgentGeneration(
     // Agent 1: generate this batch — retry up to 2 times if parse fails
     let candidates: RawCandidate[] = [];
     for (let attempt = 1; attempt <= 2; attempt++) {
-      candidates = await generateBatch(token, model, params, context, batchSize, difficultyGuide);
+      candidates = await generateBatch(token, model, providerType, params, context, batchSize, difficultyGuide);
       if (candidates.length > 0) break;
       logLines.push(`  Agent 1 attempt ${attempt} returned 0 — ${attempt < 2 ? 'retrying...' : 'skipping batch.'}`);
       if (attempt < 2) await sleep(800);
@@ -256,7 +299,7 @@ async function runMultiAgentGeneration(
     // Agent 2: rank this batch (never rejects — only adjusts score)
     let reviews: Review[] = [];
     try {
-      reviews = await validateBatch(token, model, candidates, params, context, difficultyGuide);
+      reviews = await validateBatch(token, model, providerType, candidates, params, context, difficultyGuide);
     } catch {
       logLines.push(`  Agent 2 failed — using default scores for this batch.`);
     }
@@ -355,7 +398,7 @@ router.post("/generation/start", requireAuth, async (req, res) => {
           standardName: standard?.name ?? "Standard",
         };
 
-        const { results, agentLog } = await runMultiAgentGeneration(token, params.model, params, context);
+        const { results, agentLog } = await runMultiAgentGeneration(token, params.model, provider.providerType, params, context);
 
         // Save questions
         if (results.length > 0) {
