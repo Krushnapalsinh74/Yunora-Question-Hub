@@ -11,12 +11,22 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Search, Trash2, FileDown } from 'lucide-react';
+import { Search, Trash2, FileDown, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format, parseISO } from 'date-fns';
 import { MathText } from '@/lib/math-text';
 import { useAuthStore } from '@/hooks/use-auth';
+
+type Difficulty = 'easy' | 'medium' | 'hard' | 'advanced';
+
+const DIFFICULTY_OPTIONS: { value: Difficulty; label: string; cls: string }[] = [
+  { value: 'easy',     label: 'Easy',     cls: 'bg-green-500/10 text-green-700 border-green-500/30 hover:bg-green-500/20' },
+  { value: 'medium',   label: 'Medium',   cls: 'bg-amber-500/10 text-amber-700 border-amber-500/30 hover:bg-amber-500/20' },
+  { value: 'hard',     label: 'Hard',     cls: 'bg-red-500/10 text-red-700 border-red-500/30 hover:bg-red-500/20' },
+  { value: 'advanced', label: 'Advanced', cls: 'bg-purple-500/10 text-purple-700 border-purple-500/30 hover:bg-purple-500/20' },
+];
 
 function stripMath(text: string): string {
   if (!text) return '';
@@ -34,6 +44,8 @@ const PAGE_SIZE = 50;
 export default function QuestionsPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [difficulty, setDifficulty] = useState<Difficulty | ''>('');
+  const [questionType, setQuestionType] = useState('');
   const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(1);
   const token = useAuthStore((s) => s.token);
@@ -46,7 +58,15 @@ export default function QuestionsPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const { data, isLoading } = useListQuestions({ search: debouncedSearch, page, limit: PAGE_SIZE });
+  const queryParams = {
+    search: debouncedSearch || undefined,
+    difficulty: (difficulty as Difficulty) || undefined,
+    questionType: questionType || undefined,
+    page,
+    limit: PAGE_SIZE,
+  };
+
+  const { data, isLoading } = useListQuestions(queryParams);
   const deleteQuestion = useDeleteQuestion();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -86,7 +106,7 @@ export default function QuestionsPage() {
   const handleExportPdf = async () => {
     setExporting(true);
     try {
-      const allData = await listQuestions({ search: debouncedSearch, limit: 9999 });
+      const allData = await listQuestions({ ...queryParams, page: 1, limit: 9999 });
       const questions = allData?.data ?? [];
 
       if (questions.length === 0) {
@@ -281,6 +301,9 @@ export default function QuestionsPage() {
     }
   };
 
+  const activeFilters = [difficulty, questionType].filter(Boolean).length;
+  const clearFilters = () => { setDifficulty(''); setQuestionType(''); setSearch(''); setPage(1); };
+
   return (
     <div className="space-y-6 pb-10">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -288,16 +311,7 @@ export default function QuestionsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Question Library</h1>
           <p className="text-muted-foreground">Browse, edit, and curate generated questions.</p>
         </div>
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <div className="w-full md:w-72 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input 
-              placeholder="Search questions..." 
-              className="pl-9"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           {data?.total != null && data.total > 0 && (
             <>
               <Button
@@ -324,6 +338,75 @@ export default function QuestionsPage() {
           )}
         </div>
       </div>
+
+      {/* ── Filter bar ── */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search questions..."
+            className="pl-9"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {DIFFICULTY_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => { setDifficulty(d => d === opt.value ? '' : opt.value); setPage(1); }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-full border transition-all ${
+                difficulty === opt.value
+                  ? opt.cls + ' ring-2 ring-offset-1 ring-current'
+                  : 'border-border text-muted-foreground hover:border-current ' + opt.cls
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+
+          <Select
+            value={questionType || '__all__'}
+            onValueChange={(v) => { setQuestionType(v === '__all__' ? '' : v); setPage(1); }}
+          >
+            <SelectTrigger className="h-8 text-xs w-[160px]">
+              <SelectValue placeholder="Question type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All types</SelectItem>
+              <SelectItem value="mcq">MCQ</SelectItem>
+              <SelectItem value="true-false">True / False</SelectItem>
+              <SelectItem value="fill-blank">Fill in the Blank</SelectItem>
+              <SelectItem value="one-word">One Word</SelectItem>
+              <SelectItem value="very-short">Very Short Answer</SelectItem>
+              <SelectItem value="short-answer">Short Answer</SelectItem>
+              <SelectItem value="long-answer">Long Answer</SelectItem>
+              <SelectItem value="assertion-reason">Assertion Reason</SelectItem>
+              <SelectItem value="match-following">Match the Following</SelectItem>
+              <SelectItem value="hots">HOTS</SelectItem>
+              <SelectItem value="case-study">Case Study</SelectItem>
+              <SelectItem value="numerical">Numerical</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {(activeFilters > 0 || search) && (
+            <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 px-2 text-muted-foreground">
+              <X className="h-3.5 w-3.5 mr-1" /> Clear
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Active filter summary ── */}
+      {data && (
+        <p className="text-sm text-muted-foreground -mt-2">
+          {data.total} question{data.total !== 1 ? 's' : ''}
+          {difficulty ? ` · ${DIFFICULTY_OPTIONS.find(d => d.value === difficulty)?.label}` : ''}
+          {questionType ? ` · ${questionType}` : ''}
+          {debouncedSearch ? ` · matching "${debouncedSearch}"` : ''}
+        </p>
+      )}
 
       {isLoading ? (
         <div className="space-y-4">
