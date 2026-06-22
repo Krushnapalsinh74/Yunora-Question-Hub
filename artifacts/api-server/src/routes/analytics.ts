@@ -159,4 +159,80 @@ router.get("/analytics/monthly-report", requireAuth, async (req, res) => {
   }
 });
 
+router.get("/analytics/topic-coverage", requireAuth, async (req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT
+        t.id            AS topic_id,
+        t.name          AS topic_name,
+        c.name          AS chapter_name,
+        s.name          AS subject_name,
+        COUNT(q.id)::int                                                        AS total,
+        COUNT(CASE WHEN q.difficulty = 'easy'     THEN 1 END)::int             AS easy,
+        COUNT(CASE WHEN q.difficulty = 'medium'   THEN 1 END)::int             AS medium,
+        COUNT(CASE WHEN q.difficulty = 'hard'     THEN 1 END)::int             AS hard,
+        COUNT(CASE WHEN q.difficulty = 'advanced' THEN 1 END)::int             AS advanced,
+        ROUND(AVG(q.quality_score)::numeric, 2)                                AS avg_quality
+      FROM topics t
+      LEFT JOIN chapters  c ON c.id = t.chapter_id
+      LEFT JOIN subjects  s ON s.id = c.subject_id
+      LEFT JOIN questions q ON q.topic_id = t.id
+      WHERE t.is_active = true
+      GROUP BY t.id, t.name, c.name, s.name
+      ORDER BY total DESC, t.name
+    `);
+    const rows: unknown[] = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? []);
+    res.json(rows.map((r: unknown) => {
+      const row = r as Record<string, unknown>;
+      return {
+        topicId:     Number(row["topic_id"]),
+        topicName:   String(row["topic_name"] ?? ""),
+        chapterName: String(row["chapter_name"] ?? ""),
+        subjectName: String(row["subject_name"] ?? ""),
+        total:       Number(row["total"]),
+        easy:        Number(row["easy"]),
+        medium:      Number(row["medium"]),
+        hard:        Number(row["hard"]),
+        advanced:    Number(row["advanced"]),
+        avgQuality:  parseFloat(String(row["avg_quality"] ?? "0")),
+      };
+    }));
+  } catch (err) {
+    req.log.error({ err }, "Topic coverage error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/analytics/quality-distribution", requireAuth, async (req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT
+        CASE
+          WHEN quality_score >= 0.9  THEN 'Excellent (0.9–1.0)'
+          WHEN quality_score >= 0.75 THEN 'Good (0.75–0.9)'
+          WHEN quality_score >= 0.5  THEN 'Fair (0.5–0.75)'
+          ELSE                            'Poor (<0.5)'
+        END AS band,
+        CASE
+          WHEN quality_score >= 0.9  THEN 1
+          WHEN quality_score >= 0.75 THEN 2
+          WHEN quality_score >= 0.5  THEN 3
+          ELSE                            4
+        END AS sort_order,
+        COUNT(*)::int AS count
+      FROM questions
+      GROUP BY band, sort_order
+      ORDER BY sort_order
+    `);
+    const rows: unknown[] = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? []);
+    res.json(rows.map((r: unknown) => {
+      const row = r as Record<string, unknown>;
+      return { band: String(row["band"]), count: Number(row["count"]) };
+    }));
+  } catch (err) {
+    req.log.error({ err }, "Quality distribution error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;
